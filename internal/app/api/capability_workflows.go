@@ -19,7 +19,22 @@ func (s *Server) workflowCapabilityInvocations() *appcapabilities.WorkflowInvoca
 	if !ok {
 		return nil
 	}
-	return appcapabilities.NewWorkflowInvocationService(s.GetPool(), s.Capabilities, s.Workflow, kernel, s.Tasks, s.teamRunCancel)
+	service := appcapabilities.NewWorkflowInvocationService(s.GetPool(), s.Capabilities, s.Workflow, kernel, s.Tasks, s.teamRunCancel)
+	service.UseRuntimeAuthorizations(s.runtimeCredentialAuthorizations())
+	return service
+}
+
+// runtimeCredentialAuthorizations is the process's one store of runtime
+// credential checks; its full check includes the published team scope when
+// the publication authority is configured.
+func (s *Server) runtimeCredentialAuthorizations() *appcapabilities.RuntimeCredentialAuthorizations {
+	s.runtimeCredentialsOnce.Do(func() {
+		s.runtimeCredentials = &appcapabilities.RuntimeCredentialAuthorizations{}
+		if s.PublicationAuthority != nil {
+			s.runtimeCredentials.Team = s.PublicationAuthority
+		}
+	})
+	return s.runtimeCredentials
 }
 
 func (s *Server) invokeWorkflowCapability(c echo.Context, request invokeCapabilityRequest, revision int64) error {

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 
@@ -110,6 +111,9 @@ type WorkflowInvocationService struct {
 	published   publication.PublishedService
 	tasks       *taskqueue.Store
 	canceller   *teamrun.CancelService
+	// runtimeAuthorizations, when set, keeps runtime credential checks per
+	// run attempt across the per-request services built on one process.
+	runtimeAuthorizations *RuntimeCredentialAuthorizations
 }
 
 func NewWorkflowInvocationService(
@@ -1171,8 +1175,11 @@ func (s *WorkflowInvocationService) applicationGrantActive(ctx context.Context, 
 	return active, err
 }
 
-// AuthorizeRuntimeCredential rechecks the invocation's exact application grant
-// each time TeamRun resolves a frozen provider reference for a new attempt.
+// AuthorizeRuntimeCredential checks the invocation's exact application grant
+// each time TeamRun resolves a frozen provider reference. With runtime
+// authorizations in use, an attempt's first call checks in full and later
+// calls read the authorization versions that check depended on, checking in
+// full again once one moved; a revocation still refuses the next call.
 func (s *WorkflowInvocationService) AuthorizeRuntimeCredential(
 	ctx context.Context,
 	run teamrun.TeamRun,
@@ -1263,25 +1270,96 @@ func (s *WorkflowInvocationService) authorizeRuntimeCredentialWithQueries(
 	if queries == nil {
 		return frozen.ErrCredentialSubjectDenied
 	}
+	authorizations := s.runtimeAuthorizations
+	if authorizations == nil {
+		return s.checkRuntimeCredential(ctx, queries, run, task, subject, ref, applicationID, nil)
+	}
+	key := runtimeAuthorizationKey{workspaceID: run.WorkspaceID, applicationID: applicationID, runID: run.RunID,
+		runSnapshotID: run.RunSnapshotID, sourceTaskID: run.SourceTaskID, workflowID: run.WorkflowID,
+		workflowVersion: run.WorkflowVersion, attempt: run.ExecutionLeaseEpoch, subject: subject, ref: ref}
+	if entry, ok := authorizations.lookup(key); ok {
+		// The attempt passed the full check before: this call reads the
+		// versions it depended on and the current task, and checks again in
+		// full only when a version moved.
+		versions, current, err := readAuthorizationVersions(ctx, queries, run.WorkspaceID, entry.scopes, task.ID)
+		if err != nil {
+			return frozen.ErrCredentialSubjectDenied
+		}
+		if !currentTaskMatches(current, run, task, subject) {
+			return frozen.ErrCredentialSubjectDenied
+		}
+		if slices.Equal(versions, entry.versions) {
+			return nil
+		}
+	}
+	scopes := []authorizationScope{{kind: "capability_app", id: applicationID}, {kind: "provider_credential", id: ref.ResourceID}}
+	var team *RuntimeTeamCheck
+	if authorizations.Team != nil {
+		tx, ok := queries.(pgx.Tx)
+		if !ok {
+			return frozen.ErrCredentialSubjectDenied
+		}
+		check, err := authorizations.Team.PrepareRuntimeCredential(ctx, tx, run, ref)
+		if err != nil {
+			authorizations.forget(key)
+			return frozen.ErrCredentialSubjectDenied
+		}
+		team = &check
+		scopes = append(scopes, authorizationScope{kind: "team", id: check.TeamID})
+	}
+	// The versions are read before the full check: a change committed after
+	// this read moves a version the next call sees, and one committed before
+	// it is visible to the check itself.
+	versions, _, err := readAuthorizationVersions(ctx, queries, run.WorkspaceID, scopes, task.ID)
+	if err != nil {
+		return frozen.ErrCredentialSubjectDenied
+	}
+	if err := s.checkRuntimeCredential(ctx, queries, run, task, subject, ref, applicationID, team); err != nil {
+		authorizations.forget(key)
+		return err
+	}
+	authorizations.remember(key, runtimeAuthorizationEntry{scopes: scopes, versions: versions})
+	return nil
+}
+
+// checkRuntimeCredential is the full runtime check: the invocation with its
+// current and source tasks and frozen definition, the application credential
+// it was admitted with, the application's grant and, when given, the
+// published team scope.
+func (s *WorkflowInvocationService) checkRuntimeCredential(
+	ctx context.Context,
+	queries kernelcredentials.ReferenceAuthorizationQueries,
+	run teamrun.TeamRun,
+	task *taskqueue.Task,
+	subject execution.Subject,
+	ref frozen.CredentialReference,
+	applicationID string,
+	team *RuntimeTeamCheck,
+) error {
 	// One read takes the invocation, share-locked, with the current and
-	// source task identities and the frozen definition it is checked against.
+	// source task identities, the frozen definition it is checked against and
+	// whether the credential it was admitted with is still unrevoked.
 	var record workflowInvocationRecord
 	var scheduling, definitionRaw []byte
+	var credentialActive bool
 	var current, source scannedTaskAuthorizationIdentity
 	targets := []any{&record.WorkspaceID, &record.ApplicationID, &record.RequestID, &record.InvocationID,
 		&record.CredentialID, &record.CapabilityID, &record.Revision, &record.DefinitionHash,
 		&record.WorkflowID, &record.WorkflowVersion, &record.Input, &record.InputHash,
 		&record.Lane, &record.AdmissionRequestID, &record.RunID, &record.TaskID, &record.CreatedAt, &scheduling}
-	targets = append(append(append(targets, current.targets()...), source.targets()...), &definitionRaw)
+	targets = append(append(append(targets, current.targets()...), source.targets()...), &definitionRaw, &credentialActive)
 	err := queries.QueryRow(ctx, `SELECT i.workspace_id,i.application_id,i.request_id,i.invocation_id,i.credential_id,
 	 i.capability_id,i.revision,i.definition_hash,i.workflow_id,i.workflow_version,i.input,i.input_hash,COALESCE(i.lane,''),
 	 i.admission_request_id,i.run_id,i.task_id,i.created_at,i.scheduling,
-	 `+taskAuthorizationColumns("qc")+`,`+taskAuthorizationColumns("qs")+`,rev.definition
+	 `+taskAuthorizationColumns("qc")+`,`+taskAuthorizationColumns("qs")+`,rev.definition,
+	 cred.id IS NOT NULL AND cred.revoked_at IS NULL
 	 FROM weave_capability_workflow_invocations i
 	 LEFT JOIN weave_task_queue qc ON qc.workspace_id=$4 AND qc.id=$5
 	 LEFT JOIN weave_task_queue qs ON qs.workspace_id=i.workspace_id AND qs.id=$6
 	 LEFT JOIN weave_capability_revisions rev ON rev.workspace_id=i.workspace_id AND rev.capability_id=i.capability_id
 	   AND rev.revision=i.revision AND rev.definition_hash=i.definition_hash
+	 LEFT JOIN weave_capability_credentials cred ON cred.workspace_id=i.workspace_id AND cred.app_id=i.application_id
+	   AND cred.id=i.credential_id
 	 WHERE i.workspace_id=$1 AND i.application_id=$2 AND i.run_id=$3 FOR SHARE OF i`,
 		run.WorkspaceID, applicationID, run.RunID, task.WorkspaceID, task.ID, run.SourceTaskID).Scan(targets...)
 	if err == nil && len(scheduling) > 0 {
@@ -1293,12 +1371,7 @@ func (s *WorkflowInvocationService) authorizeRuntimeCredentialWithQueries(
 	if record.TaskID != run.SourceTaskID || record.WorkflowID != run.WorkflowID || record.WorkflowVersion != run.WorkflowVersion {
 		return frozen.ErrCredentialSubjectDenied
 	}
-	currentTask, err := current.result()
-	if err != nil || currentTask.ID != task.ID || currentTask.WorkspaceID != run.WorkspaceID ||
-		currentTask.RunSnapshotID != run.RunSnapshotID || currentTask.WorkflowID != run.WorkflowID ||
-		currentTask.WorkflowVersion != run.WorkflowVersion || currentTask.Kind != task.Kind ||
-		currentTask.IdentityKind != task.IdentityKind || currentTask.IdentitySchema != task.IdentitySchemaVersion ||
-		currentTask.Subject != subject || task.Subject != subject {
+	if !currentTaskMatches(current, run, task, subject) {
 		return frozen.ErrCredentialSubjectDenied
 	}
 	sourceTask, err := source.result()
@@ -1308,6 +1381,9 @@ func (s *WorkflowInvocationService) authorizeRuntimeCredentialWithQueries(
 		sourceTask.IdentityKind != taskqueue.IdentityTeamWorkflow || sourceTask.IdentitySchema != 2 ||
 		sourceTask.Subject != subject {
 		return frozen.ErrCredentialSubjectDenied
+	}
+	if !credentialActive {
+		return ErrAccessDenied
 	}
 	if err := authorizeApplicationGrant(ctx, queries, grantIdentity{WorkspaceID: record.WorkspaceID,
 		ApplicationID: record.ApplicationID, CapabilityID: record.CapabilityID, Revision: record.Revision}); err != nil {
@@ -1321,7 +1397,27 @@ func (s *WorkflowInvocationService) authorizeRuntimeCredentialWithQueries(
 		definition.Workflow.WorkflowID != record.WorkflowID || definition.Workflow.WorkflowVersion != record.WorkflowVersion {
 		return frozen.ErrCredentialSubjectDenied
 	}
+	if team != nil {
+		tx, ok := queries.(pgx.Tx)
+		if !ok || team.Authorize == nil {
+			return frozen.ErrCredentialSubjectDenied
+		}
+		if err := team.Authorize(ctx, tx); err != nil {
+			return ErrAccessDenied
+		}
+	}
 	return nil
+}
+
+// currentTaskMatches requires the task row a call runs under to still be the
+// task the executor claimed, of this run and subject.
+func currentTaskMatches(current scannedTaskAuthorizationIdentity, run teamrun.TeamRun, task *taskqueue.Task, subject execution.Subject) bool {
+	currentTask, err := current.result()
+	return err == nil && currentTask.ID == task.ID && currentTask.WorkspaceID == run.WorkspaceID &&
+		currentTask.RunSnapshotID == run.RunSnapshotID && currentTask.WorkflowID == run.WorkflowID &&
+		currentTask.WorkflowVersion == run.WorkflowVersion && currentTask.Kind == task.Kind &&
+		currentTask.IdentityKind == task.IdentityKind && currentTask.IdentitySchema == task.IdentitySchemaVersion &&
+		currentTask.Subject == subject && task.Subject == subject
 }
 
 func projectTeamRunStatus(status string) string {

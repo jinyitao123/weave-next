@@ -137,23 +137,30 @@ func (a *PublicationAuthority) verifyCredentialProofForInvocation(
 	if err != nil {
 		return err
 	}
+	return a.verifyCredentialScopeTx(ctx, tx, subject.WorkspaceID, proof.scope, ref)
+}
+
+// verifyCredentialScopeTx checks a credential against a team scope: the
+// team's current lead, its enabled (or staged) members, their exact
+// versions, and that one of them selects the credential.
+func (a *PublicationAuthority) verifyCredentialScopeTx(ctx context.Context, tx pgx.Tx, workspaceID string, scope workflow.CandidateCredentialScope, ref frozen.CredentialReference) error {
 	var leadID string
-	if err = tx.QueryRow(ctx, `SELECT lead_avatar_id FROM weave_teams WHERE workspace_id=$1 AND id=$2`, subject.WorkspaceID, proof.scope.TeamID).Scan(&leadID); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT lead_avatar_id FROM weave_teams WHERE workspace_id=$1 AND id=$2`, workspaceID, scope.TeamID).Scan(&leadID); err != nil {
 		return err
 	}
-	if leadID != proof.scope.Lead.AgentID {
+	if leadID != scope.Lead.AgentID {
 		return execution.ErrSubjectMismatch
 	}
 	catalog := agentcatalog.New(a.pool)
-	stagedRoster, err := readStagedDevelopmentRosterTx(ctx, tx, proof.scope)
+	stagedRoster, err := readStagedDevelopmentRosterTx(ctx, tx, scope)
 	if err != nil {
 		return err
 	}
 	// The scope's members and their exact versions are read in one statement
-	// each, not once per member, since every model call authorizes again.
-	workers := make([]string, 0, len(proof.scope.Agents))
-	keys := make([]agentcatalog.AgentVersionKey, 0, len(proof.scope.Agents))
-	for _, key := range proof.scope.Agents {
+	// each, not once per member.
+	workers := make([]string, 0, len(scope.Agents))
+	keys := make([]agentcatalog.AgentVersionKey, 0, len(scope.Agents))
+	for _, key := range scope.Agents {
 		if key.AgentID != leadID {
 			workers = append(workers, key.AgentID)
 		}
@@ -161,7 +168,7 @@ func (a *PublicationAuthority) verifyCredentialProofForInvocation(
 	}
 	enabled := map[string]bool{}
 	if len(workers) > 0 {
-		rows, err := tx.Query(ctx, `SELECT worker_agent_id FROM weave_team_workers WHERE workspace_id=$1 AND team_id=$2 AND enabled AND worker_agent_id=ANY($3)`, subject.WorkspaceID, proof.scope.TeamID, workers)
+		rows, err := tx.Query(ctx, `SELECT worker_agent_id FROM weave_team_workers WHERE workspace_id=$1 AND team_id=$2 AND enabled AND worker_agent_id=ANY($3)`, workspaceID, scope.TeamID, workers)
 		if err != nil {
 			return err
 		}
@@ -183,11 +190,11 @@ func (a *PublicationAuthority) verifyCredentialProofForInvocation(
 			return execution.ErrSubjectMismatch
 		}
 	}
-	records, err := catalog.ResolveAgentVersionsTx(ctx, tx, subject.WorkspaceID, keys)
+	records, err := catalog.ResolveAgentVersionsTx(ctx, tx, workspaceID, keys)
 	if err != nil {
 		return err
 	}
-	allowed, err := credentialSelectedByTeamTx(ctx, tx, proof.scope, records, ref)
+	allowed, err := credentialSelectedByTeamTx(ctx, tx, scope, records, ref)
 	if err != nil {
 		return err
 	}

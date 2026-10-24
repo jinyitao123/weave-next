@@ -80,21 +80,11 @@ func (s *Service) AdmitPublished(ctx context.Context, request publication.Publis
 	if err = authority.AuthorizePublished(ctx, request, envelope); err != nil {
 		return publication.AdmissionReceipt{}, err
 	}
-	for _, bundle := range payload.Bundles {
-		for _, ref := range bundle.Credentials {
-			if err = s.authorizePublishedCredential(ctx, request, envelope, ref); err != nil {
-				return publication.AdmissionReceipt{}, err
-			}
-		}
-	}
-	for _, target := range payload.DeliveryTargets {
-		if err = s.authorizePublishedCredential(ctx, request, envelope, target.AccessRef); err != nil {
+	// Members usually share one provider credential; each distinct
+	// reference is authorized once.
+	for _, ref := range distinctCredentialReferences(payload) {
+		if err = s.authorizePublishedCredential(ctx, request, envelope, ref); err != nil {
 			return publication.AdmissionReceipt{}, err
-		}
-		for _, binding := range target.CredentialBindings {
-			if err = s.authorizePublishedCredential(ctx, request, envelope, binding.CredentialRef); err != nil {
-				return publication.AdmissionReceipt{}, err
-			}
 		}
 	}
 	graph, report := machine.DecodeGraphDefinitionV1(payload.GraphDefinition)

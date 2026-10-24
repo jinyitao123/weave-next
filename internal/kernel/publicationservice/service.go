@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -242,24 +243,35 @@ func (s *Service) validate(ctx context.Context, operation string, envelope froze
 	if report := machine.Validate(proofs); len(report.Issues) > 0 {
 		return workflow.Publication{}, fmt.Errorf("candidate validation: %s", report.Issues[0].Code)
 	}
-	for _, bundle := range payload.Bundles {
-		for _, ref := range bundle.Credentials {
-			if err = s.authorizeCredential(ctx, envelope, ref); err != nil {
-				return workflow.Publication{}, err
-			}
-		}
-	}
-	for _, target := range payload.DeliveryTargets {
-		if err = s.authorizeCredential(ctx, envelope, target.AccessRef); err != nil {
+	for _, ref := range distinctCredentialReferences(payload) {
+		if err = s.authorizeCredential(ctx, envelope, ref); err != nil {
 			return workflow.Publication{}, err
-		}
-		for _, binding := range target.CredentialBindings {
-			if err = s.authorizeCredential(ctx, envelope, binding.CredentialRef); err != nil {
-				return workflow.Publication{}, err
-			}
 		}
 	}
 	return workflow.PublicationFromEnvelope(envelope)
+}
+
+// distinctCredentialReferences lists the credentials a frozen payload uses,
+// each once, in the order bundles and delivery targets name them.
+func distinctCredentialReferences(payload frozen.ArtifactPayloadV1) []frozen.CredentialReference {
+	var refs []frozen.CredentialReference
+	add := func(ref frozen.CredentialReference) {
+		if !slices.Contains(refs, ref) {
+			refs = append(refs, ref)
+		}
+	}
+	for _, bundle := range payload.Bundles {
+		for _, ref := range bundle.Credentials {
+			add(ref)
+		}
+	}
+	for _, target := range payload.DeliveryTargets {
+		add(target.AccessRef)
+		for _, binding := range target.CredentialBindings {
+			add(binding.CredentialRef)
+		}
+	}
+	return refs
 }
 
 func (s *Service) authorizeCredential(ctx context.Context, envelope frozen.ArtifactEnvelopeV1, ref frozen.CredentialReference) error {

@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jinyitao123/weave/internal/app/kernelbindings"
@@ -112,6 +113,10 @@ type Server struct {
 	modelActivityBuffer       *teamrun.BufferedActivityRecorder
 	ModelGateway              *llmrouter.ModelGateway
 	teamRunCancel             *teamrun.CancelService
+	// runtimeCredentials keeps runtime credential checks per run attempt
+	// across the invocation services built per request.
+	runtimeCredentials     *appcapabilities.RuntimeCredentialAuthorizations
+	runtimeCredentialsOnce sync.Once
 	teamRunStageRetry         *teamrun.StageRetryService
 	teamRunHumanResume        *teamrun.HumanResumeService
 	teamRunHumanTasks         *teamrun.HumanTaskReader

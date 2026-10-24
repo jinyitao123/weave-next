@@ -80,6 +80,7 @@ func (f *TxCredentialFacade) Validate(
 	if err := f.validateReference(ctx, ref); err != nil {
 		return err
 	}
+	ctx = withFacadeAuthorization(ctx, ref)
 
 	var err error
 	switch ref.Kind {
@@ -108,6 +109,7 @@ func (f *TxCredentialFacade) Resolve(
 	if err := f.validateReference(ctx, ref); err != nil {
 		return SecretMaterial{}, err
 	}
+	ctx = withFacadeAuthorization(ctx, ref)
 	if ref.Kind == frozen.CredentialRuntimeAccess {
 		if request.ExpectedRuntimeEngine == "" ||
 			request.ExpectedRuntimeEngine != strings.TrimSpace(request.ExpectedRuntimeEngine) {
