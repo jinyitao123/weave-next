@@ -31,8 +31,8 @@ func (store *PGActivityStore) StageTotals(ctx context.Context, workspaceID, runI
 		count(*) FILTER (WHERE kind='member_started'),
 		COALESCE(sum((detail->>'input_tokens')::bigint) FILTER (WHERE kind IN ('member_completed','member_failed') AND jsonb_typeof(detail->'input_tokens')='number'),0),
 		COALESCE(sum((detail->>'output_tokens')::bigint) FILTER (WHERE kind IN ('member_completed','member_failed') AND jsonb_typeof(detail->'output_tokens')='number'),0),
-		COALESCE(array_agg(DISTINCT COALESCE(detail->'request'->>'model', detail->>'model') ORDER BY COALESCE(detail->'request'->>'model', detail->>'model'))
-			FILTER (WHERE kind='model_completed' AND COALESCE(detail->'request'->>'model', detail->>'model') IS NOT NULL),'{}')
+		COALESCE(array_agg(DISTINCT detail->'request'->>'model' ORDER BY detail->'request'->>'model')
+			FILTER (WHERE kind='model_completed' AND jsonb_typeof(detail->'request'->'model')='string' AND detail->'request'->>'model'<>''),'{}')
 		FROM weave_team_run_activity_events
 		WHERE workspace_id=$1 AND run_id=$2 AND node_id IS NOT NULL AND node_id<>''
 		GROUP BY node_id, member_id`

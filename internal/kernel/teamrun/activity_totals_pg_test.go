@@ -28,6 +28,7 @@ func TestStageTotalsSumEveryRoundAndNameTheModelsSentRealPG(t *testing.T) {
 		record("draft", "drafter", "member_completed", `{"input_tokens":100,"output_tokens":20}`)
 	}
 	record("check", "checker", "member_started", `{}`)
+	// The caller's label is not evidence of the model sent upstream.
 	record("check", "checker", "model_completed", `{"model":"deepseek-flash","phase":"completed"}`)
 	record("check", "checker", "member_failed", `{"input_tokens":7,"output_tokens":"not a number"}`)
 	record("", "", "run_started", `{}`)
@@ -42,9 +43,12 @@ func TestStageTotalsSumEveryRoundAndNameTheModelsSentRealPG(t *testing.T) {
 	}
 	want := map[string]ActivityStageTotals{
 		"draft": {NodeID: "draft", MemberID: "drafter", Rounds: 2, InputTokens: 200, OutputTokens: 40, Models: []string{"deepseek-v4-pro"}},
-		"check": {NodeID: "check", MemberID: "checker", Rounds: 1, InputTokens: 7, Models: []string{"deepseek-flash"}},
+		"check": {NodeID: "check", MemberID: "checker", Rounds: 1, InputTokens: 7, Models: []string{}},
 	}
 	if !reflect.DeepEqual(byNode, want) {
 		t.Fatalf("totals = %+v, want %+v", byNode, want)
+	}
+	if foreign, err := store.StageTotals(t.Context(), "another-workspace", run.RunID); err != nil || len(foreign) != 0 {
+		t.Fatalf("stage totals crossed workspace: %+v %v", foreign, err)
 	}
 }
