@@ -192,7 +192,14 @@ export function predecessors(graph: Graph, id: string): Step[] {
   const found = new Set<string>()
   const visit = (to: string) => { for (const edge of graph.edges.filter((e) => e.to_node_id === to && e.route !== 'back')) { if (!found.has(edge.from_node_id)) { found.add(edge.from_node_id); visit(edge.from_node_id) } } }
   visit(id)
-  return graph.nodes.filter((n) => found.has(n.id) && n.id !== id && ['lead', 'worker', 'join'].includes(n.type))
+  // After a join only the join's result is certain to exist; a branch step's
+  // own result is read only by the steps after it in the same branch.
+  const readable = (prior: Step) => {
+    if (!isParallelBranchWorker(graph, prior.id)) return true
+    const steps = branchSteps(graph, prior.id).map(step => step.id)
+    return steps.indexOf(id) > steps.indexOf(prior.id)
+  }
+  return graph.nodes.filter((n) => found.has(n.id) && n.id !== id && ['lead', 'worker', 'join'].includes(n.type) && readable(n))
 }
 // A parallel branch runs one or more dispatch workers in turn, then joins.
 export function isParallelBranchWorker(graph: Graph, id: string): boolean {

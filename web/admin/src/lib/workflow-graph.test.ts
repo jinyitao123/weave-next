@@ -73,6 +73,19 @@ describe('workflow canvas graph edits', () => {
     expect(serial.nodes.some(node => node.config?.kind === 'dispatch')).toBe(false)
   })
 
+  it('offers a branch step only to the later steps of its own branch', () => {
+    const input = serialGraph(['编码', '验证', '汇总'].map(name => ({ member: { id: name, displayName: name }, label: name, requirement: '返回依据' })))
+    const first = input.nodes[1]
+    const parallel = addParallelBranch(input, first.id, member('并行成员')).graph
+    const longer = insertStep(parallel, first.id, member('复核成员'))
+    const summary = longer.graph.nodes.find(node => node.label === '汇总')!
+    const join = longer.graph.nodes.find(node => node.type === 'join')!
+    // After the join only the join's result can be read (#113).
+    expect(predecessors(longer.graph, summary.id).map(node => node.id)).toContain(join.id)
+    expect(predecessors(longer.graph, summary.id).some(node => node.id === first.id || node.id === longer.selected)).toBe(false)
+    expect(predecessors(longer.graph, longer.selected).map(node => node.id)).toContain(first.id)
+  })
+
   it('blocks deleting referenced results and changing parallel structure against quorum', () => {
     const input = graph()
     expect(() => removeStep(input, input.nodes[1].id)).not.toThrow()

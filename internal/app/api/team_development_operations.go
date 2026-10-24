@@ -831,6 +831,9 @@ func (e *editSession) finish() error {
 		if issue := editResultProtocolIssue(graph); issue != "" {
 			return editFail("流程“%s”：%s", flow.Name, issue)
 		}
+		if issue := editBranchReadIssue(graph); issue != "" {
+			return editFail("流程“%s”：%s", flow.Name, issue)
+		}
 		if region := editLoneBranchRegion(graph); region != "" {
 			return editFail("流程“%s”：“%s”只有一个分支，请在同一组修改里再添加一个并行分支", flow.Name, region)
 		}

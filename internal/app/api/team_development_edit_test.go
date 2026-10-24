@@ -172,24 +172,25 @@ func TestControlledEditsKeepParallelRegionsWhole(t *testing.T) {
 		{"kind":"step_add","flow":"复核流程","after":"整理员","member":"核对员","name":"核对条款","requirement":"核对付款条件","placement":"parallel"},
 		{"kind":"step_add","flow":"复核流程","after":"并行分工","member":"负责人","name":"汇总检查结果","requirement":"汇总分支结论和原文依据"},
 		{"kind":"join","flow":"复核流程","step":"汇总分支","policy":"quorum","successCount":2},
-		{"kind":"step_input","flow":"复核流程","step":"汇总检查结果","source":"node_output","from":"核对条款","selected":true},
 		{"kind":"step_input","flow":"复核流程","step":"汇总检查结果","source":"run_input","selected":false}
 	]`)
 	editKernelGraph(t, doc.Workflows[0])
-	graph := editGraphOf(t, doc.Workflows[0])
+	graph := editStructurallyValid(t, doc.Workflows[0])
 	summary, join := editLabelled(t, graph, "汇总检查结果"), editLabelled(t, graph, "汇总分支")
 	if editResultSource(editDeliveryNode(graph)) != editString(summary["id"]) || editNumber(editObject(join["config"])["success_count"]) != 2 {
 		t.Fatalf("summary = %v join = %v", summary, join)
 	}
+	// After the join the summary reads the join's result, never a branch's own.
 	inputs := editObject(summary["inputs"])
-	if _, original := inputs["original"]; original || len(inputs) != 2 {
+	if _, original := inputs["original"]; original || len(inputs) != 1 || !editReadsNode(summary, editString(join["id"])) {
 		t.Fatalf("inputs = %v", inputs)
 	}
 	if kind := editString(editObject(editLabelled(t, graph, "整理员")["config"])["kind"]); kind != "dispatch" {
 		t.Fatalf("first branch kind = %s", kind)
 	}
 	for raw, message := range map[string]string{
-		`[{"kind":"step_remove","flow":"复核流程","step":"核对条款"}]`:                                                                     "输入来源",
+		`[{"kind":"step_remove","flow":"复核流程","step":"核对条款"}]`:                                                                     "至少保留两个分支",
+		`[{"kind":"step_input","flow":"复核流程","step":"汇总检查结果","source":"node_output","from":"核对条款","selected":true}]`:               "汇合之后读不到",
 		`[{"kind":"step_add","flow":"复核流程","after":"核对条款","member":"负责人","name":"再看一遍","requirement":"复查"}]`:                       "并行分支里的步骤只能由执行成员负责",
 		`[{"kind":"join","flow":"复核流程","step":"汇总分支","policy":"quorum","successCount":3}]`:                                         "所需成功分支数无效",
 		`[{"kind":"step_add","flow":"复核流程","after":"并行分工","member":"负责人","name":"并行汇总","requirement":"x","placement":"parallel"}]`: "并行分支须选择已启用的执行成员",
@@ -200,11 +201,6 @@ func TestControlledEditsKeepParallelRegionsWhole(t *testing.T) {
 			t.Errorf("%s: %s", raw, refusal.Message)
 		}
 	}
-	// Once nothing reads the branch, it still cannot leave a region of two.
-	editApply(t, &doc, `[{"kind":"step_input","flow":"复核流程","step":"汇总检查结果","source":"node_output","from":"核对条款","selected":false}]`)
-	if refusal := editRefusal(t, doc, `[{"kind":"step_remove","flow":"复核流程","step":"核对条款"}]`); !strings.Contains(refusal.Message, "至少保留两个分支") {
-		t.Fatalf("refusal = %s", refusal.Message)
-	}
 }
 
 func TestControlledEditsAddAndRemoveStepsInsideABranch(t *testing.T) {
@@ -212,7 +208,8 @@ func TestControlledEditsAddAndRemoveStepsInsideABranch(t *testing.T) {
 	editApply(t, &doc, `[
 		{"kind":"flow_add","name":"复核流程","description":"复核合同","member":"整理员"},
 		{"kind":"step_add","flow":"复核流程","after":"整理员","member":"核对员","name":"核对条款","requirement":"核对付款条件","placement":"parallel"},
-		{"kind":"step_add","flow":"复核流程","after":"核对条款","member":"整理员","name":"复核条款","requirement":"复核上一步的结论"}
+		{"kind":"step_add","flow":"复核流程","after":"核对条款","member":"整理员","name":"复核条款","requirement":"复核上一步的结论"},
+		{"kind":"step_add","flow":"复核流程","after":"并行分工","member":"负责人","name":"汇总","requirement":"汇总各分支结论"}
 	]`)
 	kernel := editKernelGraph(t, doc.Workflows[0])
 	graph := editGraphOf(t, doc.Workflows[0])
@@ -475,5 +472,23 @@ func TestDevelopmentCapabilityIDResolvesRepeatedNames(t *testing.T) {
 	}
 	if ids := doc.Members[1].Configuration.BusinessCapabilityIDs; len(ids) != 0 {
 		t.Fatalf("left bound = %v", ids)
+	}
+}
+
+// Opening a parallel region beside a step whose result a later step reads
+// moves that reader to the join: after the join a branch's own result is not
+// readable, and the machine refuses the graph otherwise (#113).
+func TestParallelRegionMovesLaterReadersToTheJoin(t *testing.T) {
+	doc := editTestDocument()
+	editApply(t, &doc, `[
+		{"kind":"flow_add","name":"复核流程","description":"复核合同","member":"整理员"},
+		{"kind":"step_add","flow":"复核流程","after":"整理员","member":"核对员","name":"核对条款","requirement":"核对付款条件"},
+		{"kind":"step_add","flow":"复核流程","after":"核对条款","member":"核对员","name":"汇总","requirement":"汇总结论"},
+		{"kind":"step_add","flow":"复核流程","after":"核对条款","member":"整理员","name":"复查","requirement":"复查条款","placement":"parallel"}
+	]`)
+	graph := editStructurallyValid(t, doc.Workflows[0])
+	summary, join, check := editLabelled(t, graph, "汇总"), editLabelled(t, graph, "汇总分支"), editLabelled(t, graph, "核对条款")
+	if !editReadsNode(summary, editString(join["id"])) || editReadsNode(summary, editString(check["id"])) {
+		t.Fatalf("汇总 inputs = %v", summary["inputs"])
 	}
 }

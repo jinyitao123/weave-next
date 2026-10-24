@@ -181,6 +181,47 @@ func editPredecessors(graph editGraph, id string) []map[string]any {
 	return steps
 }
 
+// editLaterInBranch says whether a step follows another in the same
+// parallel branch, where it may read that step's own result.
+func editLaterInBranch(graph editGraph, from, id string) bool {
+	seen := map[string]bool{}
+	for current := from; editParallelBranchWorker(graph, current) && !seen[current]; {
+		seen[current] = true
+		outgoing := editEdges(graph, "from_node_id", current)
+		if len(outgoing) != 1 || editString(outgoing[0]["route"]) != "success" {
+			return false
+		}
+		current = editString(outgoing[0]["to_node_id"])
+		if current == id {
+			return true
+		}
+	}
+	return false
+}
+
+// editBranchReadIssue names a step or delivery that reads a parallel branch's
+// own result from outside that branch; after the join only the join's result
+// is certain to exist.
+func editBranchReadIssue(graph editGraph) string {
+	for _, node := range editItems(graph, "nodes") {
+		id := editString(node["id"])
+		read := []string{editResultSource(node)}
+		if editNodeType(node) != "deliver" {
+			read = nil
+		}
+		for _, binding := range editObject(node["inputs"]) {
+			read = append(read, editString(editObject(editObject(binding)["value"])["node_id"]))
+		}
+		for _, from := range read {
+			if from != "" && editParallelBranchWorker(graph, from) && !editLaterInBranch(graph, from, id) {
+				return fmt.Sprintf("“%s”读取了并行分支“%s”的结果，汇合之后读不到分支单独的结果；请改为读取汇合步骤的结果，或在汇合后添加汇总步骤作为交付来源",
+					editFirst(editString(node["label"]), "交付结果"), editString(editNode(graph, from)["label"]))
+			}
+		}
+	}
+	return ""
+}
+
 // editParallelBranchWorker says whether a step is one of the dispatch workers
 // a parallel branch runs in turn.
 func editParallelBranchWorker(graph editGraph, id string) bool {
@@ -342,8 +383,16 @@ func editAddParallelBranch(graph editGraph, id string, member *developmentMember
 	next := editMemberStep(member, editNode(graph, before), "dispatch")
 	nextID := editString(next["id"])
 	editConfig(node)["kind"] = "dispatch"
-	// Existing readers of this member's result stay bound to it; a later step
-	// may read the join result explicitly.
+	// After the join a branch's own result is not readable, so later steps
+	// read the join instead. A delivery still reading the branch is refused
+	// when the group ends unless the group adds a step after the join.
+	for _, other := range editItems(graph, "nodes") {
+		for _, binding := range editObject(other["inputs"]) {
+			if value := editObject(editObject(binding)["value"]); editString(value["node_id"]) == id {
+				editObject(binding)["value"], editObject(binding)["expected_type"] = editNodeOutputRef(join), "json"
+			}
+		}
+	}
 	editSetItems(graph, "edges", append(editWithoutEdges(graph, incoming[0], outgoing[0]),
 		editNewEdge(before, parallel, "success"), editNewEdge(parallel, id, "branch"), editNewEdge(parallel, nextID, "branch"),
 		editNewEdge(id, join, "join"), editNewEdge(nextID, join, "join"), editNewEdge(join, editString(outgoing[0]["to_node_id"]), "success")))
