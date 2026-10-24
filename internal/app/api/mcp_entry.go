@@ -20,7 +20,7 @@ import (
 // console and the desktop already use, made with the caller's own credential,
 // so validation, permissions and audit are the ones those routes apply.
 
-const mcpEntryInstructions = "Weave 的团队开发与使用工具。修改团队前先用 weave_development_read 读取草稿和可修改的类别，再用 weave_development_guide 读取要用到的那一类写法；不要猜测字段。使用者要求出错时要按规定处理时，用 guarantee 类别设置失败分支，不要只写进成员的工作要求。团队草稿以外的操作（归档团队、运行、执行节点、飞书、客户端会话）用 weave_workspace_guide 读取类别和写法，再用 weave_workspace_apply 办理；要填写或显示密钥的操作不经这里办理。经这里交接的工作不带业务动作授权，需要办理业务的部分由员工在桌面办理。团队和流程的标识只用于调用，不要展示给使用者。设备工具（device_*）只对本人账号会话开放，用来查看和操作使用者本人绑定的 Mac 与 Windows：先 device_list，再 device_session_open，ready 后截图或读取界面结构再操作；会改变机器的操作带 op_id，结果不确定时用同一个 op_id 重试。不得用设备工具在 Forge 或小满界面中办理业务写入。"
+const mcpEntryInstructions = "Weave 的团队开发与使用工具。修改团队前先用 weave_development_read 读取草稿和可修改的类别，再用 weave_development_guide 读取要用到的那一类写法；不要猜测字段。使用者的要求有明确的检查标准或出错时要按规定处理时，用 guarantee 类别设置检查回路或失败分支，并写成断言（guarantees）由服务端证明，不要只写进成员的工作要求；发布前把草稿中已证明的流程保证复述给使用者。团队草稿以外的操作（归档团队、运行、执行节点、飞书、客户端会话）用 weave_workspace_guide 读取类别和写法，再用 weave_workspace_apply 办理；要填写或显示密钥的操作不经这里办理。经这里交接的工作不带业务动作授权，需要办理业务的部分由员工在桌面办理。团队和流程的标识只用于调用，不要展示给使用者。设备工具（device_*）只对本人账号会话开放，用来查看和操作使用者本人绑定的 Mac 与 Windows：先 device_list，再 device_session_open，ready 后截图或读取界面结构再操作；会改变机器的操作带 op_id，结果不确定时用同一个 op_id 重试。不得用设备工具在 Forge 或小满界面中办理业务写入。"
 
 const (
 	mcpMaterialLimit = 200 << 10
@@ -265,8 +265,16 @@ func mcpDraftView(draft developmentDraft, catalog []catalogCapability) map[strin
 		})
 	}
 	flows := []map[string]any{}
+	proofs := map[string][]developmentGuaranteeView{}
+	for _, summary := range developmentGuaranteeSummaries(&doc) {
+		proofs[summary.WorkflowID] = summary.Items
+	}
 	for _, flow := range doc.Workflows {
 		view := map[string]any{"workflow_id": flow.ID, "name": flow.Name, "description": flow.Description}
+		// What the flow guarantees, in words to repeat to the user before publishing.
+		if items := proofs[flow.ID]; len(items) > 0 {
+			view["guarantees"] = items
+		}
 		if graph, err := decodeEditGraph(flow.Graph); err == nil {
 			label := func(id string) string { return editString(editNode(graph, id)["label"]) }
 			steps := []map[string]any{}

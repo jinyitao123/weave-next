@@ -86,11 +86,13 @@ var developmentOperationTopics = []developmentOperationTopic{
 	// without success; documented, agents would rely on it as an audit control.
 	{Topic: "guarantee", Title: "流程保证", Covers: "为步骤加检查回路、设置失败分支：检查不通过就退回重做，步骤失败就转给指定成员处理；这些环节由流程强制执行，成员无法跳过", Operations: []developmentOperationDoc{
 		{Kind: "check_loop", Summary: "step 是要检查的负责人或成员步骤；checker 是负责检查的已启用执行成员（可用本组 member_add 新增成员的 ref）；criteria 是检查标准；maxRounds 是最多做几轮（1 至 5），用完仍未通过时交付最后一轮的结果", Example: `{"kind":"check_loop","flow":"合同复核流程","step":"核对条款","checker":"格式检查员","criteria":"每条结论都引用条款原文；金额大小写一致；没有遗漏付款与违约条款","maxRounds":3}`},
+		{Kind: "guarantees", Summary: "require 整体替换这条流程的断言列表（至多 16 项，空列表表示清除）；每项是 {type, step}：passes_through 要求每条通往交付的路径都经过 step，checked 要求 step 有检查回路，failure_handled 要求 step 有失败分支。断言在每次读取草稿时证明，不成立时进入 issues 并阻止发布", Example: `{"kind":"guarantees","flow":"合同复核流程","require":[{"type":"passes_through","step":"核对条款"},{"type":"checked","step":"核对条款"},{"type":"failure_handled","step":"核对条款"}]}`},
 		{Kind: "check_loop_remove", Summary: "step 是加了检查回路的步骤；移除后它直接连到原来的下一步", Example: `{"kind":"check_loop_remove","flow":"合同复核流程","step":"核对条款"}`},
 		{Kind: "on_failure", Summary: "step 是可能失败的步骤；它失败时改由 member 按 requirement 处理，name 是这一步的名称，处理结果作为本次任务的交付", Example: `{"kind":"on_failure","flow":"合同复核流程","step":"核对条款","member":"合同协调员","name":"核对失败说明","requirement":"说明核对没有完成的原因，列出已经核对的部分和需要人工补充的内容"}`},
 		{Kind: "on_failure_remove", Summary: "step 是设置了失败分支的步骤；整条失败分支一起移除", Example: `{"kind":"on_failure_remove","flow":"合同复核流程","step":"核对条款"}`},
 	}, Rules: []string{
 		developmentNamingRule,
+		"把使用者的硬性要求同时写成断言（guarantees）：断言由服务端在流程图上证明，草稿的 workflows[].guarantees 用白话列出已证明的保证和流程结构本身带来的保证；发布前把这份列表复述给使用者确认，不成立的断言要先修改流程。",
 		"结果有明确的检查标准（金额要能验算、条款要有引用、格式要符合要求）时，用检查回路落实：检查由另一位成员按标准完成，不通过就带着意见退回重做。检查员可以用低成本模型，例如先 member_add 一位 model 为低成本模型的检查员，再用 check_loop 指定它。",
 		"检查回路：只能加在不在并行分支、不在已有回路里、也没有失败分支的步骤上；被检查的步骤会收到上一轮的检查意见，后续步骤读取的是最后一轮的结果。加了检查回路的步骤要先移除回路才能移除步骤。",
 		"使用者要求“出错时要怎样处理”时，用失败分支落实，不要只写进成员的工作要求：工作要求只能要求成员遵守，失败分支由流程强制执行。",

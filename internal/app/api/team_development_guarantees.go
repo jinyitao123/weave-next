@@ -313,6 +313,10 @@ func (e *editSession) addFailureBranch(operation map[string]any) error {
 	if editFailureEdge(graph, editString(step["id"])) != nil {
 		return editFail("“%s”已经设置了失败分支，请先用 on_failure_remove 移除", editString(step["label"]))
 	}
+	// A failure route out of a loop body would leave the loop sideways.
+	if editInLoop(graph, editString(step["id"])) {
+		return editFail("“%s”在检查回路里，不能再设置失败分支；需要时把失败分支设在回路之前或之后的步骤上", editString(step["label"]))
+	}
 	if !actor.Relationship.Enabled {
 		return editFail("失败处理须选择已启用的成员")
 	}
