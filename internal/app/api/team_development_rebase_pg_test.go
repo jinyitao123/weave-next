@@ -214,6 +214,27 @@ func TestTeamDevelopmentRebaseTakesInLiveChangesRealPG(t *testing.T) {
 	}
 }
 
+func TestRebaseKeepsDraftGuaranteesWhenTakingLiveGraphChanges(t *testing.T) {
+	doc := editTestDocument()
+	editApply(t, &doc, editAssertedFlow)
+	editApply(t, &doc, `[{"kind":"guarantees","flow":"合同复核流程","require":[{"type":"passes_through","step":"核对条款"}]}]`)
+	var live developmentDocument
+	if err := json.Unmarshal([]byte(encodeDevelopment(doc)), &live); err != nil {
+		t.Fatal(err)
+	}
+	// Live catalogs contain executable graphs, not draft assertions. An
+	// externally removed step must invalidate the assertion, not erase it.
+	live.Workflows[0].Guarantees = nil
+	editApply(t, &live, `[{"kind":"step_remove","flow":"合同复核流程","step":"核对条款"}]`)
+	merged, _, conflicts := mergeDevelopmentDocuments(doc, doc, live, false)
+	if len(conflicts) != 0 || len(merged.Workflows) != 1 || len(merged.Workflows[0].Guarantees) != 1 {
+		t.Fatalf("rebase lost the draft assertion: flows=%+v conflicts=%+v", merged.Workflows, conflicts)
+	}
+	if issues := developmentUnprovenGuarantees(&merged); len(issues) != 1 || issues[0].Blocks != "publish" {
+		t.Fatalf("changed live graph no longer blocks publishing: %+v", issues)
+	}
+}
+
 func TestMergeDevelopmentDocumentsHandlesMembersAndFlows(t *testing.T) {
 	member := func(id, prompt string) developmentMember {
 		m := developmentMember{ID: id}
