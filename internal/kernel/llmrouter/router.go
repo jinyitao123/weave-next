@@ -294,6 +294,22 @@ func maskKey(key string) string {
 // Compile-time interface check.
 var _ contract.LLM = (*Router)(nil)
 
+// WithCallFactsObserver reports each physical request made with ctx through
+// a provider adapter that observes its protocol. A logical call that is
+// retried or falls back reports once per request, in order.
+func WithCallFactsObserver(ctx context.Context, observe func(CallFacts)) context.Context {
+	if observe == nil {
+		return ctx
+	}
+	ctx = context.WithValue(ctx, callFactsKey{}, observe)
+	return openai.WithProtocolObserver(ctx, callFactsObserverOptions, func(value contract.ProtocolObservation) {
+		observe(callFactsFrom(value))
+	})
+}
+
+// Facts need no tool argument digests, so the frame and tool bounds stay small.
+var callFactsObserverOptions = openai.ProtocolObserverOptions{MaxDataFrames: 4096, MaxToolDeltas: 4096, MaxToolIndexes: protocolToolLimit}
+
 // ObserveModelProtocolCall keeps provider coupling inside the adapter. It
 // attaches a passive observer, sanitizes its metadata, and separately measures
 // the returned standard ToolCalls. Request/response/error are never rewritten.

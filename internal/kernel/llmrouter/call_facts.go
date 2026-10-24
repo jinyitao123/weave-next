@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/jinyitao123/loom/contract"
-	"github.com/jinyitao123/loom/provider/openai"
 )
 
 // CallFacts is what the provider boundary observed about one physical model
@@ -52,22 +51,6 @@ type CallRequest struct {
 }
 
 type callFactsKey struct{}
-
-// WithCallFactsObserver reports each physical request made with ctx through
-// a provider adapter that observes its protocol. A logical call that is
-// retried or falls back reports once per request, in order.
-func WithCallFactsObserver(ctx context.Context, observe func(CallFacts)) context.Context {
-	if observe == nil {
-		return ctx
-	}
-	ctx = context.WithValue(ctx, callFactsKey{}, observe)
-	return openai.WithProtocolObserver(ctx, callFactsObserverOptions, func(value contract.ProtocolObservation) {
-		observe(callFactsFrom(value))
-	})
-}
-
-// Facts need no tool argument digests, so the frame and tool bounds stay small.
-var callFactsObserverOptions = openai.ProtocolObserverOptions{MaxDataFrames: 4096, MaxToolDeltas: 4096, MaxToolIndexes: protocolToolLimit}
 
 func callFactsObserverFrom(ctx context.Context) func(CallFacts) {
 	observe, _ := ctx.Value(callFactsKey{}).(func(CallFacts))
