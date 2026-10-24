@@ -167,6 +167,9 @@ func (s *Server) handlePublishTeamDevelopment(c echo.Context) error {
 	if !readiness.Ready {
 		return developmentError("每条待发布流程都需要当前草稿成功试跑，并覆盖已声明的必办模拟动作")
 	}
+	if unproven := developmentUnprovenGuarantees(&d.Document); len(unproven) > 0 {
+		return developmentError("流程“" + unproven[0].Workflow + "”的" + unproven[0].Message)
+	}
 	if err = checkDevelopmentBaseline(ctx, tx, ws, id, d.Baseline); err != nil {
 		return err
 	}

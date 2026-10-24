@@ -1,10 +1,13 @@
 package runtimehost
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -91,9 +94,6 @@ func TestCollectOutputArtifactsIncludesOnlyReferencedCurrentRootFiles(t *testing
 	write("private.md", "not selected for delivery")
 	write("AGENTS.md", "managed instructions")
 	write(".secret.md", "hidden")
-	if err := os.Symlink(filepath.Join(workDir, "private.md"), filepath.Join(workDir, "linked.md")); err != nil {
-		t.Fatal(err)
-	}
 	answer := "已生成 `brief.md:1`; `stale.md`, `AGENTS.md`, `.secret.md`, `linked.md`."
 	artifacts := CollectOutputArtifactsSince(workDir, before, answer)
 	if len(artifacts) != 1 || artifacts[0].Path != "brief.md" || artifacts[0].Content != body || artifacts[0].ContentType != "text/markdown" {
@@ -105,6 +105,17 @@ func TestCollectOutputArtifactsIncludesOnlyReferencedCurrentRootFiles(t *testing
 	if got := CollectOutputArtifactsSince(workDir, nil, answer); len(got) != 0 {
 		t.Fatalf("root files collected without an invocation snapshot: %#v", got)
 	}
+	t.Run("does not follow symbolic links", func(t *testing.T) {
+		if err := os.Symlink(filepath.Join(workDir, "private.md"), filepath.Join(workDir, "linked.md")); err != nil {
+			if runtime.GOOS == "windows" && errors.Is(err, syscall.Errno(1314)) {
+				t.Skip("Windows symbolic-link privilege is unavailable")
+			}
+			t.Fatal(err)
+		}
+		if got := CollectOutputArtifactsSince(workDir, before, answer); len(got) != 1 || got[0].Path != "brief.md" {
+			t.Fatalf("symbolic link entered delivery: %#v", got)
+		}
+	})
 }
 
 func TestCollectOutputArtifactsKeepsOnlyBoundedRegularTextFiles(t *testing.T) {

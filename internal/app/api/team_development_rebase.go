@@ -163,11 +163,20 @@ func mergeDevelopmentDocuments(base, draft, live developmentDocument, keepDraft 
 		switch {
 		case inLive:
 			current := flow
-			baseValue := canonicalDevelopmentValue(baseFlow)
+			// Assertions belong to the draft, not the live executable catalog.
+			// Compare catalog fields and retain assertions on the adopted graph
+			// so a live edit can invalidate a guarantee instead of deleting it.
+			baseDefinition, draftDefinition := baseFlow, flow
+			baseDefinition.Guarantees, draftDefinition.Guarantees = nil, nil
+			liveFlow.Guarantees = nil
+			baseValue := canonicalDevelopmentValue(baseDefinition)
 			if !inBase {
 				baseValue = ""
 			}
-			resolve("workflow", flow.ID, "", flow.Name, threeWay(baseValue, canonicalDevelopmentValue(flow), canonicalDevelopmentValue(liveFlow)), func() { current = liveFlow })
+			resolve("workflow", flow.ID, "", flow.Name, threeWay(baseValue, canonicalDevelopmentValue(draftDefinition), canonicalDevelopmentValue(liveFlow)), func() {
+				current = liveFlow
+				current.Guarantees = flow.Guarantees
+			})
 			merged.Workflows = append(merged.Workflows, current)
 		case inBase && canonicalDevelopmentValue(flow) == canonicalDevelopmentValue(baseFlow):
 			changes = append(changes, developmentRebaseChange{Kind: "workflow", ID: flow.ID, Name: flow.Name, Action: "removed"})

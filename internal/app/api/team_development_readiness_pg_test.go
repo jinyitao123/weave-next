@@ -97,6 +97,7 @@ func TestDevelopmentPublicationReadinessUnionsCurrentCandidateSimulationReceipts
 		t.Fatalf("same-candidate action union did not unlock publication: readiness=%+v err=%v", readiness, err)
 	}
 	assertDevelopmentReadinessHTTP200(t, ctx, pool, envelope)
+	assertUnprovenGuaranteeBlocksPublication(t, ctx, pool, envelope)
 }
 
 func assertDevelopmentReadinessHTTP200(t *testing.T, ctx context.Context, pool *pgxpool.Pool, envelope frozen.ArtifactEnvelopeV1) {

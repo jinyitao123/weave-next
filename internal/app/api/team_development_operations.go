@@ -314,6 +314,8 @@ func (e *editSession) apply(operation map[string]any) error {
 		return e.addFailureBranch(operation)
 	case "on_failure_remove":
 		return e.removeFailureBranch(operation)
+	case "guarantees":
+		return e.changeGuarantees(operation)
 	case "check_loop":
 		return e.addCheckLoop(operation)
 	case "check_loop_remove":

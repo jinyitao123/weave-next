@@ -26,6 +26,9 @@ type developmentWorkflow struct {
 	Description string          `json:"description"`
 	Graph       json.RawMessage `json:"graph_definition"`
 	Trigger     json.RawMessage `json:"trigger_config"`
+	// Guarantees are what the flow must hold, proven on every read and
+	// required for publishing; the machine graph does not carry them.
+	Guarantees []developmentGuarantee `json:"guarantees,omitempty"`
 }
 type developmentDocument struct {
 	Name      string `json:"name"`
@@ -61,6 +64,9 @@ type developmentDraft struct {
 	PublicationReadiness developmentPublicationReadiness `json:"publication_readiness"`
 	// Issues lists what the draft still lacks, for every surface that edits it.
 	Issues []developmentIssue `json:"issues"`
+	// Guarantees summarizes, per flow, the declared assertions with their
+	// proofs and what the flow's structure enforces by itself.
+	Guarantees []developmentFlowGuarantees `json:"guarantees"`
 	// BaselineChanged reports that the live team, a member or a flow changed
 	// after the draft was opened; trials and publishing wait for a rebase.
 	BaselineChanged bool `json:"baseline_changed"`
@@ -233,6 +239,7 @@ func (s *Server) handleGetTeamDevelopment(c echo.Context) error {
 		return err
 	}
 	d.Issues = developmentIssues(d.Document, catalog, catalogKnown)
+	d.Guarantees = developmentGuaranteeSummaries(&d.Document)
 	if baselineErr := checkDevelopmentBaseline(ctx, tx, ws, id, d.Baseline); baselineErr != nil {
 		var httpErr *echo.HTTPError
 		if !errors.As(baselineErr, &httpErr) {

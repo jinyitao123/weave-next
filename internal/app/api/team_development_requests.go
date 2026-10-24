@@ -58,7 +58,7 @@ func readBusinessCapabilities(ctx context.Context, query interface {
 // developmentIssues lists what a draft still lacks. The console and the
 // desktop assistant both show this list instead of working it out themselves.
 func developmentIssues(doc developmentDocument, catalog []catalogCapability, catalogKnown bool) []developmentIssue {
-	issues := []developmentIssue{}
+	issues := developmentUnprovenGuarantees(&doc)
 	add := func(scope, target, workflow, code, blocks, message string) {
 		issues = append(issues, developmentIssue{Scope: scope, Target: target, Workflow: workflow, Code: code, Message: message, Blocks: blocks})
 	}
