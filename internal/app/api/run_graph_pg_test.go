@@ -44,14 +44,19 @@ func TestRunGraphReadsTheAdmittedCandidateAndRequiresDeveloperAccessRealPG(t *te
 	trial := admitDevelopmentCoverageTrial(t, ctx, pool, kernel, envelope, developmentTestActionDefinitions(t, false, false), "graph snapshot fixture")
 	runs := teamrun.NewPGStore()
 	runs.Transactions = pool
-	server := &Server{Pool: pool, Snapshots: snapshot.NewStore(pool), WorkflowArtifacts: workflow.NewArtifactStore(pool, nil),
+	server := &Server{Pool: pool, Store: teamDeliveryPoolStore{teamDispatchPoolStore{pool: pool}}, Snapshots: snapshot.NewStore(pool), WorkflowArtifacts: workflow.NewArtifactStore(pool, nil),
 		teamRunCancel: &teamrun.CancelService{Transactions: pool, Runs: runs}}
 	read := func(workspace, role, runID string) *httptest.ResponseRecorder {
 		t.Helper()
+		actor := "user"
+		if role == "admin" {
+			actor = "reviewer"
+		}
+		viewer := execution.WithSubject(t.Context(), execution.Subject{WorkspaceID: workspace, UserID: actor})
 		recorder := httptest.NewRecorder()
-		c := echo.New().NewContext(httptest.NewRequest(http.MethodGet, "/v1/runs/"+runID+"/graph", nil).WithContext(ctx), recorder)
+		c := echo.New().NewContext(httptest.NewRequest(http.MethodGet, "/v1/runs/"+runID+"/graph", nil).WithContext(viewer), recorder)
 		c.Set("tenant", workspace)
-		c.Set("user_id", "user")
+		c.Set("user_id", actor)
 		c.Set("roles", []string{role})
 		c.SetParamNames("id")
 		c.SetParamValues(runID)
@@ -84,5 +89,8 @@ func TestRunGraphReadsTheAdmittedCandidateAndRequiresDeveloperAccessRealPG(t *te
 	}
 	if graph.RunID != trial.runID || graph.WorkflowID != envelope.WorkflowID || graph.WorkflowVersion != envelope.WorkflowVersion || graph.ContentHash != envelope.ContentHash || !graph.DevelopmentTrial || canonicalDevelopmentValue(graph.GraphDefinition) != canonicalDevelopmentValue(payload.GraphDefinition) {
 		t.Fatalf("run did not return its admitted graph: %+v", graph)
+	}
+	if response := read("ws", "admin", trial.runID); response.Code != http.StatusOK {
+		t.Fatalf("authorized reviewer could not inspect another actor's graph: %d %s", response.Code, response.Body.String())
 	}
 }

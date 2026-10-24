@@ -5,10 +5,10 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v4"
 
 	"github.com/jinyitao123/weave/internal/base/frozen"
-	"github.com/jinyitao123/weave/internal/base/snapshot"
 	"github.com/jinyitao123/weave/internal/kernel/teamrun"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 )
@@ -38,7 +38,7 @@ func (s *Server) handleGetRunGraph(c echo.Context) error {
 		}
 		s.auditRunView(c, runID, "graph")
 	}
-	if s.teamRunCancel == nil || s.teamRunCancel.Runs == nil || s.Snapshots == nil || s.WorkflowArtifacts == nil {
+	if s.teamRunCancel == nil || s.teamRunCancel.Runs == nil || s.GetPool() == nil || s.WorkflowArtifacts == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "run_read_unavailable"})
 	}
 	run, err := s.teamRunCancel.Runs.Get(ctx, workspace, runID)
@@ -57,15 +57,23 @@ func (s *Server) handleGetRunGraph(c echo.Context) error {
 			return c.JSON(http.StatusForbidden, map[string]string{"error": "insufficient permissions"})
 		}
 	}
-	bound, err := s.Snapshots.GetByRunID(ctx, workspace, run.RunSnapshotID)
-	if errors.Is(err, snapshot.ErrNotFound) {
+	// Run inspection has been authorized above. Read only its frozen graph
+	// reference, scoped to the workspace and the run's own snapshot. The
+	// execution snapshot reader's actor filter stays reserved for execution;
+	// an authorized reviewer does not become the original execution subject.
+	view := runGraphView{RunID: runID}
+	var candidateHash string
+	err = s.GetPool().QueryRow(ctx, `SELECT COALESCE(artifact_workflow_id,''),
+		COALESCE(artifact_workflow_version,0), COALESCE(candidate_content_hash,'')
+		FROM weave_team_run_snapshots WHERE workspace_id=$1 AND run_id=$2`, workspace, run.RunSnapshotID).
+		Scan(&view.WorkflowID, &view.WorkflowVersion, &candidateHash)
+	if errors.Is(err, pgx.ErrNoRows) {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "run_graph_not_found"})
 	}
 	if err != nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "run_read_unavailable"})
 	}
-	view := runGraphView{RunID: runID, WorkflowID: bound.ArtifactWorkflowID,
-		WorkflowVersion: bound.ArtifactWorkflowVersion, DevelopmentTrial: bound.CandidateContentHash != ""}
+	view.DevelopmentTrial = candidateHash != ""
 	if view.WorkflowID == "" || view.WorkflowVersion < 1 {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "run_graph_not_found"})
 	}
@@ -74,7 +82,7 @@ func (s *Server) handleGetRunGraph(c echo.Context) error {
 		if !callerAtLeast(c, roleDeveloper) {
 			return c.JSON(http.StatusForbidden, map[string]string{"error": "insufficient permissions"})
 		}
-		artifact, err = s.WorkflowArtifacts.GetCandidateArtifact(ctx, workspace, view.WorkflowID, view.WorkflowVersion, bound.CandidateContentHash)
+		artifact, err = s.WorkflowArtifacts.GetCandidateArtifact(ctx, workspace, view.WorkflowID, view.WorkflowVersion, candidateHash)
 	} else {
 		artifact, err = s.WorkflowArtifacts.GetArtifact(ctx, workspace, view.WorkflowID, view.WorkflowVersion)
 	}
