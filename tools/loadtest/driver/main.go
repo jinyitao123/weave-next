@@ -60,6 +60,10 @@ type options struct {
 	cancelAfter    time.Duration
 	watchEvery     time.Duration
 	keepDB         bool
+	lockEvery      time.Duration
+	topStatements  int
+	minSuccess     float64
+	p95Target      time.Duration
 }
 
 func parseInts(s string) ([]int, error) {
@@ -92,7 +96,7 @@ func main() {
 	flag.IntVar(&o.executors, "executors", 0, "separate workflow executor processes; 0 keeps the combined API/executor process")
 	flag.StringVar(&conc, "concurrency", "4,256,1000", "WEAVE_TEAMRUN_EXECUTOR_CONCURRENCY values, one Weave run each")
 	flag.StringVar(&scen, "scenarios", "idle,consult,decide,cancel", "scenarios to run: idle,consult,decide,cancel")
-	flag.StringVar(&lanes, "lanes", "10,50,200", "decide lane counts")
+	flag.StringVar(&lanes, "lanes", "10,20,50,100", "decide lane counts, run as a ladder from the first: a step runs only after the previous one passed")
 	flag.StringVar(&o.outDir, "out", "", "output directory (default ./loadtest-out/<timestamp>)")
 	flag.Var(&o.weaveEnv, "weave-env", "extra KEY=VALUE for the Weave process (repeatable), e.g. WEAVE_TEAMRUN_EXECUTOR=pooled")
 	flag.StringVar(&o.poolMaxConns, "pool-max-conns", "", "append pool_max_conns to the Weave DATABASE_URL (empty: pgx default)")
@@ -108,6 +112,10 @@ func main() {
 	flag.DurationVar(&o.cancelAfter, "cancel-after", 1500*time.Millisecond, "how long after the first model call the cancel is sent")
 	flag.DurationVar(&o.watchEvery, "watch-every", 50*time.Millisecond, "completion watch period (one batched SQL per tick on the test DB)")
 	flag.BoolVar(&o.keepDB, "keep-db", false, "keep the last test database instead of dropping it at the end")
+	flag.DurationVar(&o.lockEvery, "lock-every", 500*time.Millisecond, "pg_locks / pg_stat_activity sampling period")
+	flag.IntVar(&o.topStatements, "top-statements", 20, "statement fingerprints listed per completed workflow")
+	flag.Float64Var(&o.minSuccess, "min-success", 0.99, "share of measured decide invocations that must complete for the next step to run")
+	flag.DurationVar(&o.p95Target, "p95-target", 30*time.Second, "P95 of all measured decide invocations a step must meet for the next step to run (0: success rate only)")
 	flag.Parse()
 
 	var err error
@@ -189,6 +197,7 @@ func run(ctx context.Context, o options) error {
 			"decide_warmup": o.s1Warmup.String(), "lanes": o.lanes, "consult_count": o.s2Count, "consult_lanes": o.s2Lanes,
 			"idle_window": o.s3Window.String(), "cancel_count": o.cancelCount, "cancel_after": o.cancelAfter.String(),
 			"weave_env": []string(o.weaveEnv), "pool_max_conns": o.poolMaxConns, "watch_every": o.watchEvery.String(),
+			"lock_every": o.lockEvery.String(), "min_success": o.minSuccess, "p95_target": o.p95Target.String(),
 		},
 	}
 	defer func() {
@@ -290,7 +299,16 @@ func runConcurrency(ctx context.Context, o options, pg *pgEnv, sc *stubClient, s
 		}
 	}
 	env := &scenarioEnv{o: o, pg: pg, stub: sc, weave: w, prov: p, conc: conc,
-		caller: newAPIClient(w.baseURL, 2048)}
+		caller: newAPIClient(w.baseURL, 2048), console: newAPIClient(w.baseURL, 2)}
+	if err := env.console.signIn(ctx, w.loginKey); err != nil {
+		return res, fmt.Errorf("console sign-in: %w", err)
+	}
+	notify, err := pg.startNotify(ctx)
+	if err != nil {
+		return res, err
+	}
+	defer notify.Close()
+	env.notify = notify
 	watcher, err := newInvocationWatcher(ctx, pg, o.watchEvery)
 	if err != nil {
 		return res, err
@@ -312,7 +330,8 @@ func runConcurrency(ctx context.Context, o options, pg *pgEnv, sc *stubClient, s
 			r, err = runConsult(ctx, env)
 			res.Consult = r
 		case "decide":
-			for _, lanes := range o.lanes {
+			res.Ladder = &ladderResult{}
+			for index, lanes := range o.lanes {
 				var r *latencyResult
 				r, err = runDecide(ctx, env, lanes)
 				if r != nil {
@@ -321,7 +340,15 @@ func runConcurrency(ctx context.Context, o options, pg *pgEnv, sc *stubClient, s
 				if err != nil {
 					break
 				}
+				if !r.Step.Passed {
+					res.Ladder.StoppedAt, res.Ladder.Reason = lanes, r.Step.Reason
+					res.Ladder.Skipped = append([]int(nil), o.lanes[index+1:]...)
+					log.Printf("decide %d lanes did not pass (%s); not stepping up", lanes, r.Step.Reason)
+					break
+				}
+				res.Ladder.Passed = lanes
 			}
+			res.Ladder.Exhausted = res.Ladder.StoppedAt == 0 && err == nil
 		case "cancel":
 			var r *cancelResult
 			r, err = runCancel(ctx, env)

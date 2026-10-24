@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 	"github.com/labstack/echo/v4"
 )
@@ -106,5 +107,18 @@ func (s *Server) handleGetAdminMetrics(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "metrics_failed"})
 	}
 	return c.JSON(http.StatusOK, map[string]any{"first_output_median_seconds": median, "sample": sample,
-		"teamrun_capacity": s.teamRunCapacity(), "timing": s.effectiveTiming()})
+		"teamrun_capacity": s.teamRunCapacity(), "timing": s.effectiveTiming(), "database_pool": databasePoolStats(pool)})
+}
+
+// databasePoolStats reports this process's connection pool counters. They are
+// cumulative since start, so a reader compares two reads to see how often and
+// how long acquiring a connection waited.
+func databasePoolStats(pool *pgxpool.Pool) map[string]any {
+	stat := pool.Stat()
+	return map[string]any{
+		"max_conns": stat.MaxConns(), "total_conns": stat.TotalConns(), "acquired_conns": stat.AcquiredConns(),
+		"idle_conns": stat.IdleConns(), "acquire_count": stat.AcquireCount(), "empty_acquire_count": stat.EmptyAcquireCount(),
+		"canceled_acquire_count": stat.CanceledAcquireCount(), "acquire_duration_ms": float64(stat.AcquireDuration()) / float64(time.Millisecond),
+		"empty_acquire_wait_ms": float64(stat.EmptyAcquireWaitTime()) / float64(time.Millisecond),
+	}
 }

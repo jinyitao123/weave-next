@@ -185,7 +185,7 @@ func (p *pgEnv) snapshot(ctx context.Context) (snapshot, error) {
 	s := snapshot{At: time.Now(), Tables: map[string]tableCounters{}}
 	// Table counters first (one transaction on the test database).
 	err := p.withTestConn(ctx, func(conn *pgx.Conn) error {
-		rows, err := conn.Query(ctx, `SELECT relname, n_tup_ins, n_tup_upd, n_tup_hot_upd, n_tup_del,
+		rows, err := conn.Query(ctx, driverQueryMarker+`SELECT relname, n_tup_ins, n_tup_upd, n_tup_hot_upd, n_tup_del,
 			n_live_tup, n_dead_tup, coalesce(seq_scan,0), coalesce(idx_scan,0) FROM pg_stat_user_tables`)
 		if err != nil {
 			return err
@@ -224,7 +224,7 @@ func (p *pgEnv) snapshot(ctx context.Context) (snapshot, error) {
 
 // statementCounters reads pg_stat_statements for the test database only.
 func statementCounters(ctx context.Context, conn *pgx.Conn) (map[int64]statementCounter, error) {
-	rows, err := conn.Query(ctx, `SELECT queryid, max(query), sum(calls)::bigint, sum(total_exec_time)::float8 FROM pg_stat_statements
+	rows, err := conn.Query(ctx, driverQueryMarker+`SELECT queryid, max(query), sum(calls)::bigint, sum(total_exec_time)::float8 FROM pg_stat_statements
 		WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database()) AND queryid IS NOT NULL GROUP BY queryid`)
 	if err != nil {
 		return nil, err
@@ -285,9 +285,10 @@ type dbRates struct {
 }
 
 type statementRate struct {
-	Calls  int64   `json:"calls"`
-	ExecMS float64 `json:"exec_ms"`
-	Query  string  `json:"query"`
+	Calls       int64   `json:"calls"`
+	PerWorkflow float64 `json:"per_workflow,omitempty"`
+	ExecMS      float64 `json:"exec_ms"`
+	Query       string  `json:"query"`
 }
 
 func diffSnapshots(a, b snapshot) dbRates {
@@ -314,7 +315,7 @@ func diffSnapshots(a, b snapshot) dbRates {
 		var all []statementRate
 		for id, sb := range b.Statements {
 			calls := sb.Calls - a.Statements[id].Calls
-			if calls <= 0 {
+			if calls <= 0 || strings.Contains(sb.Query, strings.TrimSpace(driverQueryMarker)) {
 				continue
 			}
 			execMS := sb.ExecMS - a.Statements[id].ExecMS

@@ -85,7 +85,7 @@ func (w *invocationWatcher) run() {
 			continue
 		}
 		ctx, cancel := context.WithTimeout(w.ctx, 5*time.Second)
-		rows, err := w.conn.Query(ctx, `SELECT i.invocation_id,i.created_at,r.terminal_at
+		rows, err := w.conn.Query(ctx, driverQueryMarker+`SELECT i.invocation_id,i.created_at,r.terminal_at
 		 FROM weave_capability_workflow_invocations i JOIN weave_team_runs r ON r.workspace_id=i.workspace_id AND r.run_id=i.run_id
 		 WHERE i.invocation_id=ANY($1::text[]) AND r.status IN ('succeeded','failed','cancelled','abandoned')`, ids)
 		w.pg.mu.Lock()
