@@ -32,7 +32,7 @@ func TestFanoutJoinAddsBranchUsageToParentRealPG(t *testing.T) {
 		t.Helper()
 		usage.Attempts[0].AttemptID = group + "/" + legID + "/" + nodeID
 		leg := FanoutLegTaskPayloadV1{GroupID: group, LegID: legID}
-		if err := runtime.recordFanoutLegStep(ctx, "ws", leg, nodeID, ordinal, json.RawMessage(`"ok"`), nil, usage); err != nil {
+		if err := runtime.recordFanoutLegStep(ctx, "ws", leg, nodeID, ordinal, json.RawMessage(`"ok"`), nil, usage, nil); err != nil {
 			t.Fatal(err)
 		}
 	}

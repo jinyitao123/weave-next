@@ -240,6 +240,13 @@ type WorkflowOutputRecorder interface {
 	RecordWorkflowOutput(context.Context, deliverable.WorkflowOutput) error
 }
 
+// WorkflowOutputTxRecorder is an OutputRecorder that can also record inside a
+// caller's transaction; a fanout branch step's outputs then commit with the
+// step itself instead of in transactions of their own.
+type WorkflowOutputTxRecorder interface {
+	RecordWorkflowOutputsTx(context.Context, pgx.Tx, []deliverable.WorkflowOutput) error
+}
+
 type WorkflowSerialRuntime struct {
 	BusinessReceiptReader deliverycheck.BusinessReceiptReader
 	AuthorizationRetry    execution.AuthorizationRetryAuthorizer
@@ -726,22 +733,26 @@ func (r *WorkflowSerialRuntime) workflowOutputRecorder(
 		return nil
 	}
 	return func(ctx context.Context, node machine.Node, output any, final bool) error {
-		agentID := ""
-		if worker, ok := node.Config.(machine.WorkerConfig); ok {
-			agentID = worker.AgentID
-		}
-		return r.OutputRecorder.RecordWorkflowOutput(ctx, deliverable.WorkflowOutput{
-			WorkspaceID:   run.WorkspaceID,
-			RunID:         run.RunID,
-			RunSnapshotID: run.RunSnapshotID,
-			NodeID:        node.ID,
-			NodeLabel:     node.Label,
-			NodeType:      string(node.Type),
-			AgentID:       agentID,
-			Output:        output,
-			Final:         final,
-			CreatedAt:     r.now(),
-		})
+		return r.OutputRecorder.RecordWorkflowOutput(ctx, r.nodeWorkflowOutput(run, node, output, final))
+	}
+}
+
+func (r *WorkflowSerialRuntime) nodeWorkflowOutput(run TeamRun, node machine.Node, output any, final bool) deliverable.WorkflowOutput {
+	agentID := ""
+	if worker, ok := node.Config.(machine.WorkerConfig); ok {
+		agentID = worker.AgentID
+	}
+	return deliverable.WorkflowOutput{
+		WorkspaceID:   run.WorkspaceID,
+		RunID:         run.RunID,
+		RunSnapshotID: run.RunSnapshotID,
+		NodeID:        node.ID,
+		NodeLabel:     node.Label,
+		NodeType:      string(node.Type),
+		AgentID:       agentID,
+		Output:        output,
+		Final:         final,
+		CreatedAt:     r.now(),
 	}
 }
 
@@ -786,19 +797,32 @@ func (r *WorkflowSerialRuntime) recordWorkflowArtifacts(
 	if r == nil || r.OutputRecorder == nil {
 		return nil
 	}
+	for _, output := range r.artifactWorkflowOutputs(run, owner, artifacts, final) {
+		if err := r.OutputRecorder.RecordWorkflowOutput(ctx, output); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *WorkflowSerialRuntime) artifactWorkflowOutputs(
+	run TeamRun,
+	owner workflowArtifactOwner,
+	artifacts []workflow.RuntimeCLIArtifact,
+	final bool,
+) []deliverable.WorkflowOutput {
+	outputs := make([]deliverable.WorkflowOutput, 0, len(artifacts))
 	for _, artifact := range artifacts {
-		if err := r.OutputRecorder.RecordWorkflowOutput(ctx, deliverable.WorkflowOutput{
+		outputs = append(outputs, deliverable.WorkflowOutput{
 			WorkspaceID: run.WorkspaceID, RunID: run.RunID, RunSnapshotID: run.RunSnapshotID,
 			NodeID: owner.NodeID, NodeLabel: owner.NodeLabel, NodeType: owner.NodeType, AgentID: owner.AgentID,
 			Artifact: &deliverable.WorkflowArtifact{
 				Path: artifact.Path, ContentType: artifact.ContentType, Content: artifact.Content,
 			},
 			Final: final, CreatedAt: r.now(),
-		}); err != nil {
-			return err
-		}
+		})
 	}
-	return nil
+	return outputs
 }
 
 func (r *WorkflowSerialRuntime) loadFrozenGraph(

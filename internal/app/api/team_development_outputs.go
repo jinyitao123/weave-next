@@ -17,6 +17,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/kernel/teamrun"
@@ -143,12 +144,54 @@ func (recorder *developmentTrialWorkflowOutputRecorder) RecordWorkflowOutput(ctx
 	return persistDevelopmentTrialStageOutput(ctx, recorder.pool, trial, output)
 }
 
-func developmentTrialForRun(ctx context.Context, pool *pgxpool.Pool, workspaceID, runID string) (developmentTrialRun, bool, error) {
-	if pool == nil || strings.TrimSpace(workspaceID) == "" || strings.TrimSpace(runID) == "" {
+// RecordWorkflowOutputsTx records outputs inside the caller's transaction: a
+// development trial's in its own store, any other run's through the
+// fallback store's transactional recorder.
+func (recorder *developmentTrialWorkflowOutputRecorder) RecordWorkflowOutputsTx(ctx context.Context, tx pgx.Tx, outputs []deliverable.WorkflowOutput) error {
+	if recorder == nil || recorder.pool == nil {
+		return errors.New("workflow output recorder is unavailable")
+	}
+	var others []deliverable.WorkflowOutput
+	for _, output := range outputs {
+		trial, found, err := developmentTrialForRun(ctx, tx, output.WorkspaceID, output.RunID)
+		if err != nil {
+			return fmt.Errorf("resolve development trial output owner: %w", err)
+		}
+		if found {
+			if err := persistDevelopmentTrialStageOutput(ctx, tx, trial, output); err != nil {
+				return err
+			}
+			continue
+		}
+		others = append(others, output)
+	}
+	if len(others) == 0 || recorder.fallback == nil {
+		return nil
+	}
+	if fallback, ok := recorder.fallback.(teamrun.WorkflowOutputTxRecorder); ok {
+		return fallback.RecordWorkflowOutputsTx(ctx, tx, others)
+	}
+	for _, output := range others {
+		if err := recorder.fallback.RecordWorkflowOutput(ctx, output); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// developmentTrialQueries is a pool or a transaction.
+type developmentTrialQueries interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+}
+
+func developmentTrialForRun(ctx context.Context, queries developmentTrialQueries, workspaceID, runID string) (developmentTrialRun, bool, error) {
+	if pool, isPool := queries.(*pgxpool.Pool); queries == nil || isPool && pool == nil ||
+		strings.TrimSpace(workspaceID) == "" || strings.TrimSpace(runID) == "" {
 		return developmentTrialRun{}, false, nil
 	}
 	var trial developmentTrialRun
-	err := pool.QueryRow(ctx, `SELECT trial.workspace_id,trial.team_id,trial.request_id::text,trial.actor_id,
+	err := queries.QueryRow(ctx, `SELECT trial.workspace_id,trial.team_id,trial.request_id::text,trial.actor_id,
 		trial.revision,trial.workflow_id,run.workflow_version
 		FROM weave_team_runs AS run
 		JOIN weave_task_queue AS root
@@ -169,7 +212,7 @@ func developmentTrialForRun(ctx context.Context, pool *pgxpool.Pool, workspaceID
 	return trial, true, nil
 }
 
-func persistDevelopmentTrialStageOutput(ctx context.Context, pool *pgxpool.Pool, trial developmentTrialRun, output deliverable.WorkflowOutput) error {
+func persistDevelopmentTrialStageOutput(ctx context.Context, queries developmentTrialQueries, trial developmentTrialRun, output deliverable.WorkflowOutput) error {
 	recorded, err := encodeDevelopmentTrialStageOutput(output)
 	if err != nil {
 		return err
@@ -178,7 +221,7 @@ func persistDevelopmentTrialStageOutput(ctx context.Context, pool *pgxpool.Pool,
 	if len(body) > developmentTrialOutputBodyMaxBytes {
 		state, body = "storage_failed", nil
 	}
-	tag, err := pool.Exec(ctx, `INSERT INTO weave_team_development_trial_output_bodies
+	tag, err := queries.Exec(ctx, `INSERT INTO weave_team_development_trial_output_bodies
 		(workspace_id,request_id,output_id,team_id,actor_id,run_id,node_id,member_id,node_label,node_type,
 		 kind,path,content_type,content_sha256,content_bytes,body_state,body,created_at)
 		SELECT trial.workspace_id,trial.request_id,$7,trial.team_id,trial.actor_id,$8,$9,$10,$11,$12,
@@ -195,7 +238,7 @@ func persistDevelopmentTrialStageOutput(ctx context.Context, pool *pgxpool.Pool,
 	}
 	if tag.RowsAffected() == 0 {
 		var exists bool
-		if err = pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM weave_team_development_trial_output_bodies
+		if err = queries.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM weave_team_development_trial_output_bodies
 			WHERE workspace_id=$1 AND request_id=$2::uuid AND output_id=$3)`,
 			output.WorkspaceID, trial.RequestID, recorded.OutputID).Scan(&exists); err != nil {
 			return fmt.Errorf("check development trial stage output: %w", err)

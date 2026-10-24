@@ -128,6 +128,15 @@ func (s *Store) RecordWorkflowOutputs(ctx context.Context, outputs []WorkflowOut
 	return tx.Commit(ctx)
 }
 
+// RecordWorkflowOutputsTx records outputs inside the caller's transaction,
+// so they commit together with the caller's own write.
+func (s *Store) RecordWorkflowOutputsTx(ctx context.Context, tx pgx.Tx, outputs []WorkflowOutput) error {
+	if s == nil || s.pool == nil || tx == nil {
+		return errors.New("workflow deliverable store is unavailable")
+	}
+	return s.recordWorkflowOutputsTx(ctx, tx, outputs)
+}
+
 func (s *Store) recordWorkflowOutputsTx(ctx context.Context, tx pgx.Tx, outputs []WorkflowOutput) error {
 	for _, output := range outputs {
 		if err := s.recordWorkflowOutput(ctx, tx, output); err != nil {
