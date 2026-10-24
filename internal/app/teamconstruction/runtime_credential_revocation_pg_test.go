@@ -263,6 +263,33 @@ func TestRuntimeCredentialFirstCallUsesOnlyTheResolverConnectionRealPG(t *testin
 	}
 }
 
+// Normal development publication retains its candidate roster. That draft
+// snapshot must not authorize a published member after live revocation.
+func TestRuntimeCredentialPublishedRosterCannotRestoreADisabledMemberRealPG(t *testing.T) {
+	f := newRuntimeCredentialFixture(t)
+	team := registry.PublicationTeamRead{WorkspaceID: runtimeCredentialWorkspace, TeamID: "team",
+		Workers: []registry.TeamWorker{{WorkerAgentID: f.workerID, Enabled: true}}}
+	if err := f.pool.QueryRow(context.Background(), `SELECT payload->'team'->>'lead_agent_id',
+	 (payload->'team'->>'lead_agent_version')::bigint FROM weave_published_artifact_contents
+	 WHERE workspace_id=$1 AND workflow_id='flow'`, runtimeCredentialWorkspace).Scan(&team.LeadAvatarID, &team.LeadAvatarVersion); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(team)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.exec(t, `INSERT INTO weave_team_development_candidates(workspace_id,workflow_id,workflow_version,team_id,revision,team_read)
+	 SELECT workspace_id,workflow_id,workflow_version,team_id,1,$2::jsonb
+	 FROM weave_team_run_snapshots WHERE workspace_id=$1 AND run_id='run-1'`, runtimeCredentialWorkspace, string(encoded))
+	if err := f.call(); err != nil {
+		t.Fatalf("first call with a retained development roster: %v", err)
+	}
+	f.exec(t, `UPDATE weave_team_workers SET enabled=false WHERE workspace_id=$1 AND worker_agent_id=$2`, runtimeCredentialWorkspace, f.workerID)
+	if err := f.call(); err == nil {
+		t.Fatal("the published candidate roster restored a disabled live member's credential access")
+	}
+}
+
 type unusedWorkflowResolver struct{}
 
 func (unusedWorkflowResolver) ResolvePublished(context.Context, string, string, *int) (frozen.ArtifactEnvelopeV1, error) {

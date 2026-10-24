@@ -209,7 +209,13 @@ func readStagedDevelopmentRosterTx(ctx context.Context, tx pgx.Tx, scope workflo
 		return nil, nil
 	}
 	var raw []byte
-	err := tx.QueryRow(ctx, `SELECT team_read FROM weave_team_development_candidates WHERE workspace_id=$1 AND workflow_id=$2 AND workflow_version=$3 AND team_id=$4`, scope.WorkspaceID, scope.WorkflowID, scope.WorkflowVersion, scope.TeamID).Scan(&raw)
+	// A retained candidate is authoring evidence after publication; only a
+	// draft may use it to authorize members not yet in the live roster.
+	err := tx.QueryRow(ctx, `SELECT candidate.team_read FROM weave_team_development_candidates candidate
+	 JOIN weave_team_workflow_versions version ON version.workspace_id=candidate.workspace_id
+	  AND version.workflow_id=candidate.workflow_id AND version.version=candidate.workflow_version
+	 WHERE candidate.workspace_id=$1 AND candidate.workflow_id=$2 AND candidate.workflow_version=$3
+	  AND candidate.team_id=$4 AND version.status='draft'`, scope.WorkspaceID, scope.WorkflowID, scope.WorkflowVersion, scope.TeamID).Scan(&raw)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
