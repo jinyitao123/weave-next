@@ -41,9 +41,22 @@ func NewFallbackLLM(inner contract.LLM, primaryModel string, fallbackModels []st
 	}
 }
 
-// Chat tries the primary model, then fallbacks on failure.
-func (f *FallbackLLM) Chat(ctx context.Context, req contract.ChatRequest) (*contract.ChatResponse, error) {
+// models lists the models to try in order. A request naming one of this
+// wrapper's models, as a declarative step choosing its own model does, starts
+// with that model; any other request starts with the primary model.
+func (f *FallbackLLM) models(requested string) []string {
 	models := append([]string{f.primaryModel}, f.fallbackModels...)
+	for index, model := range models {
+		if model == requested && index > 0 {
+			return append([]string{requested}, append(models[:index:index], models[index+1:]...)...)
+		}
+	}
+	return models
+}
+
+// Chat tries the requested or primary model, then the others on failure.
+func (f *FallbackLLM) Chat(ctx context.Context, req contract.ChatRequest) (*contract.ChatResponse, error) {
+	models := f.models(req.Model)
 	var lastErr error
 
 	for _, model := range models {
@@ -87,9 +100,9 @@ func (f *FallbackLLM) Chat(ctx context.Context, req contract.ChatRequest) (*cont
 	return nil, fmt.Errorf("fallback: all models exhausted: %w", lastErr)
 }
 
-// Stream tries the primary model, then fallbacks on failure.
+// Stream tries the requested or primary model, then the others on failure.
 func (f *FallbackLLM) Stream(ctx context.Context, req contract.ChatRequest) (<-chan contract.StreamChunk, error) {
-	models := append([]string{f.primaryModel}, f.fallbackModels...)
+	models := f.models(req.Model)
 	var lastErr error
 
 	for _, model := range models {
