@@ -24,25 +24,55 @@ func (a *PublicationAuthority) PrepareRuntimeCredential(ctx context.Context, _ p
 	if a == nil || a.pool == nil {
 		return appcapabilities.RuntimeTeamCheck{}, errors.New("publication authority unavailable")
 	}
-	artifact, err := workflow.NewArtifactStore(a.pool, nil).GetArtifact(ctx, run.WorkspaceID, run.WorkflowID, run.WorkflowVersion)
+	scope, err := a.runtimeCredentialScope(ctx, run, ref)
 	if err != nil {
 		return appcapabilities.RuntimeTeamCheck{}, err
+	}
+	return appcapabilities.RuntimeTeamCheck{TeamID: scope.TeamID,
+		Authorize: func(ctx context.Context, tx pgx.Tx) error {
+			return a.verifyCredentialScopeTx(ctx, tx, run.WorkspaceID, scope, ref)
+		}}, nil
+}
+
+type runtimeScopeKey struct {
+	workspaceID, workflowID, teamID string
+	workflowVersion                 int
+	ref                             frozen.CredentialReference
+}
+
+// runtimeScopesLimit bounds the scopes one process keeps; each is derived
+// from an immutable published artifact and read again when dropped.
+const runtimeScopesLimit = 4096
+
+// runtimeCredentialScope derives the team scope from the run's immutable
+// published artifact once per workflow version and credential.
+func (a *PublicationAuthority) runtimeCredentialScope(ctx context.Context, run teamrun.TeamRun, ref frozen.CredentialReference) (workflow.CandidateCredentialScope, error) {
+	key := runtimeScopeKey{workspaceID: run.WorkspaceID, workflowID: run.WorkflowID, teamID: run.TeamID, workflowVersion: run.WorkflowVersion, ref: ref}
+	a.runtimeScopesMu.Lock()
+	scope, known := a.runtimeScopes[key]
+	a.runtimeScopesMu.Unlock()
+	if known {
+		return scope, nil
+	}
+	artifact, err := workflow.NewArtifactStore(a.pool, nil).GetArtifact(ctx, run.WorkspaceID, run.WorkflowID, run.WorkflowVersion)
+	if err != nil {
+		return workflow.CandidateCredentialScope{}, err
 	}
 	payload, err := frozen.DecodeArtifactEnvelopeV1(frozen.ArtifactEnvelopeV1{WorkspaceID: artifact.WorkspaceID, WorkflowID: artifact.WorkflowID,
 		WorkflowVersion: artifact.WorkflowVersion, ArtifactSchemaVersion: artifact.ArtifactSchemaVersion,
 		CanonicalizationAlgorithm: artifact.CanonicalizationAlgorithm, CanonicalizationVersion: artifact.CanonicalizationVersion,
 		HashAlgorithm: artifact.HashAlgorithm, ContentHash: artifact.ContentHash, Payload: artifact.Payload})
 	if err != nil {
-		return appcapabilities.RuntimeTeamCheck{}, err
+		return workflow.CandidateCredentialScope{}, err
 	}
 	if payload.Team.WorkspaceID != run.WorkspaceID || payload.Team.TeamID != run.TeamID {
-		return appcapabilities.RuntimeTeamCheck{}, errors.New("published team differs from the run's team")
+		return workflow.CandidateCredentialScope{}, errors.New("published team differs from the run's team")
 	}
 	graph, report := machine.DecodeGraphDefinitionV1(payload.GraphDefinition)
 	if report != nil && len(report.Issues) > 0 {
-		return appcapabilities.RuntimeTeamCheck{}, errors.New("published capability workflow graph is invalid")
+		return workflow.CandidateCredentialScope{}, errors.New("published capability workflow graph is invalid")
 	}
-	scope := workflow.CandidateCredentialScope{WorkspaceID: run.WorkspaceID, TeamID: payload.Team.TeamID,
+	scope = workflow.CandidateCredentialScope{WorkspaceID: run.WorkspaceID, TeamID: payload.Team.TeamID,
 		WorkflowID: run.WorkflowID, WorkflowVersion: run.WorkflowVersion,
 		Lead: machine.AgentVersionKey{AgentID: payload.Team.LeadAgentID, AgentVersion: payload.Team.LeadAgentVersion}}
 	for _, reference := range machine.ReferencedBundles(scope.Lead, graph) {
@@ -53,10 +83,13 @@ func (a *PublicationAuthority) PrepareRuntimeCredential(ctx context.Context, _ p
 		frozenRef = frozenRef || slices.Contains(bundle.Credentials, ref)
 	}
 	if !frozenRef {
-		return appcapabilities.RuntimeTeamCheck{}, errors.New("credential is not frozen into the published workflow")
+		return workflow.CandidateCredentialScope{}, errors.New("credential is not frozen into the published workflow")
 	}
-	return appcapabilities.RuntimeTeamCheck{TeamID: scope.TeamID,
-		Authorize: func(ctx context.Context, tx pgx.Tx) error {
-			return a.verifyCredentialScopeTx(ctx, tx, run.WorkspaceID, scope, ref)
-		}}, nil
+	a.runtimeScopesMu.Lock()
+	if a.runtimeScopes == nil || len(a.runtimeScopes) >= runtimeScopesLimit {
+		a.runtimeScopes = make(map[runtimeScopeKey]workflow.CandidateCredentialScope)
+	}
+	a.runtimeScopes[key] = scope
+	a.runtimeScopesMu.Unlock()
+	return scope, nil
 }

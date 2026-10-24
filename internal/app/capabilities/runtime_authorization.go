@@ -24,6 +24,9 @@ type RuntimeCredentialAuthorizations struct {
 
 	mu      sync.Mutex
 	entries map[runtimeAuthorizationKey]runtimeAuthorizationEntry
+	// checking holds the attempts whose full check is running, so the
+	// attempt's calls that start meanwhile wait for it instead of repeating it.
+	checking map[runtimeAuthorizationKey]chan struct{}
 }
 
 // RuntimeTeamAuthority checks a runtime credential against the team scope
@@ -82,6 +85,31 @@ func (a *RuntimeCredentialAuthorizations) remember(key runtimeAuthorizationKey, 
 		a.entries = make(map[runtimeAuthorizationKey]runtimeAuthorizationEntry)
 	}
 	a.entries[key] = entry
+}
+
+// claim makes the caller the attempt's one full check, or returns the
+// channel closed when the running one ends.
+func (a *RuntimeCredentialAuthorizations) claim(key runtimeAuthorizationKey) (chan struct{}, bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if done, running := a.checking[key]; running {
+		return done, false
+	}
+	if a.checking == nil {
+		a.checking = make(map[runtimeAuthorizationKey]chan struct{})
+	}
+	done := make(chan struct{})
+	a.checking[key] = done
+	return done, true
+}
+
+func (a *RuntimeCredentialAuthorizations) release(key runtimeAuthorizationKey, done chan struct{}) {
+	a.mu.Lock()
+	if a.checking[key] == done {
+		delete(a.checking, key)
+	}
+	a.mu.Unlock()
+	close(done)
 }
 
 func (a *RuntimeCredentialAuthorizations) forget(key runtimeAuthorizationKey) {

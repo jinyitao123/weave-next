@@ -1277,7 +1277,23 @@ func (s *WorkflowInvocationService) authorizeRuntimeCredentialWithQueries(
 	key := runtimeAuthorizationKey{workspaceID: run.WorkspaceID, applicationID: applicationID, runID: run.RunID,
 		runSnapshotID: run.RunSnapshotID, sourceTaskID: run.SourceTaskID, workflowID: run.WorkflowID,
 		workflowVersion: run.WorkflowVersion, attempt: run.ExecutionLeaseEpoch, subject: subject, ref: ref}
-	if entry, ok := authorizations.lookup(key); ok {
+	entry, ok := authorizations.lookup(key)
+	if !ok {
+		// An attempt's calls often start together (a fanout's legs): one
+		// checks in full while the others wait, then read the versions.
+		done, first := authorizations.claim(key)
+		if first {
+			defer authorizations.release(key, done)
+		} else {
+			select {
+			case <-done:
+			case <-ctx.Done():
+				return frozen.ErrCredentialSubjectDenied
+			}
+			entry, ok = authorizations.lookup(key)
+		}
+	}
+	if ok {
 		// The attempt passed the full check before: this call reads the
 		// versions it depended on and the current task, and checks again in
 		// full only when a version moved.

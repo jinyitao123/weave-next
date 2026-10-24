@@ -350,3 +350,27 @@ func (f *runtimeCredentialFixture) exec(t *testing.T, sql string, args ...any) {
 		t.Fatal(err)
 	}
 }
+
+// The calls of an attempt that start together, like a fanout's legs, wait
+// for one full check and then each read the versions; all of them resolve,
+// and the call after a revocation is still refused.
+func TestRuntimeCredentialConcurrentFirstCallsShareOneCheckRealPG(t *testing.T) {
+	f := newRuntimeCredentialFixture(t)
+	errs := make(chan error, 4)
+	for range 4 {
+		go func() { errs <- f.call() }()
+	}
+	for range 4 {
+		if err := <-errs; err != nil {
+			t.Fatalf("a concurrent first call of the attempt: %v", err)
+		}
+	}
+	grant := f.grant
+	grant.Enabled = false
+	if err := f.access.SetGrant(context.Background(), runtimeCredentialWorkspace, "alice", grant); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.call(); err == nil {
+		t.Fatal("the call after the revocation resolved the provider credential")
+	}
+}

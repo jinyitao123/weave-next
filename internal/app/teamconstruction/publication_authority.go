@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -21,6 +22,9 @@ type publicationProductReadTxKey struct{}
 type PublicationAuthority struct {
 	pool    *pgxpool.Pool
 	builder *workflowcatalog.CandidateBuilder
+
+	runtimeScopesMu sync.Mutex
+	runtimeScopes   map[runtimeScopeKey]workflow.CandidateCredentialScope
 }
 
 func NewPublicationAuthority(pool *pgxpool.Pool, builder *workflowcatalog.CandidateBuilder) *PublicationAuthority {
