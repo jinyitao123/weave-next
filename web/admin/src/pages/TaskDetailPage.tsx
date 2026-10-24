@@ -8,8 +8,9 @@ import { checkReason, checkTitle, engineName, relativeTime } from '../lib/format
 import { usePolling } from '../lib/polling'
 import { LogViewer } from './LogViewer'
 import { readDevelopment } from '../lib/teams'
+import { FlowCanvas, type StepRun } from '../components/workflow/FlowCanvas'
 import {
-  duration, executionLabel, failureText, readQueue, subscribeTask, waitText, type TaskWait, executionTone, readActivity, readTask, readTaskOutput, retryStage, sourceLabel, stageLabel, stopTask, terminal, verificationLabel,
+  duration, executionLabel, failureText, readQueue, readRunGraph, runStageState, stageTotals, subscribeTask, waitText, type RunGraph, type TaskWait, executionTone, readActivity, readTask, readTaskOutput, retryStage, sourceLabel, stageLabel, stopTask, terminal, verificationLabel,
   type Activity, type ActivityMember, type MemberStage, type SavedOutput, type TaskSummary,
 } from '../lib/tasks'
 
@@ -36,7 +37,7 @@ export function TaskDetailPage({ runId, navigate }: { runId: string; navigate(pa
   const [activity, setActivity] = useState<Activity>()
   const [error, setError] = useState('')
   const [selected, setSelected] = useState<string>()
-  const [tab, setTab] = useState<'output' | 'evidence' | 'details'>('output')
+  const [tab, setTab] = useState<'output' | 'graph' | 'evidence' | 'details'>('output')
   const [busy, setBusy] = useState(false)
   const [stopKey] = useState(() => createUUID())
   const [missing, setMissing] = useState(false)
@@ -149,9 +150,10 @@ export function TaskDetailPage({ runId, navigate }: { runId: string; navigate(pa
       </aside>
       <div className="task-panel">
         <div className="tabs" role="tablist" aria-label="任务内容">
-          {([['output', '输出'], ['evidence', '证据'], ['details', '详情']] as const).map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)}>{label}</button>)}
+          {([['output', '输出'], ['graph', '流程图'], ['evidence', '证据'], ['details', '详情']] as const).map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)}>{label}</button>)}
         </div>
         {tab === 'output' ? current ? <StageOutput runId={runId} version={version} item={current} busy={busy} onRetry={readOnly ? undefined : () => void act(() => retryStage(runId, current.stage.node_id, createUUID()))} /> : <p className="muted">尚未开始执行。</p> : null}
+        {tab === 'graph' ? <RunFlow runId={runId} stages={stages} observed={activity?.stages} onSelect={(key) => { setSelected(key); setTab('output') }} /> : null}
         {tab === 'evidence' ? <Evidence activity={activity} /> : null}
         {tab === 'details' ? <Details activity={activity} firstOutputAt={task?.first_output_at} /> : null}
       </div>
@@ -164,7 +166,8 @@ function StageOutput({ runId, version, logStream, item, busy, onRetry }: { runId
   const updates = stage.public_updates ?? []
   return <div className="stack">
     <div className="stage-head">
-      <div><h2>{stage.name || member.name}</h2><p className="muted small">{member.name}{member.runtime?.engine ? ` · ${engineName(member.runtime.engine)}` : ''}{member.runtime?.model ? ` · ${member.runtime.model}` : ''} · {stageLabel(stage.status)}</p></div>
+      <div><h2>{stage.name || member.name}</h2><p className="muted small">{member.name}{member.runtime?.engine ? ` · ${engineName(member.runtime.engine)}` : ''}{member.runtime?.model ? ` · ${member.runtime.model}` : ''} · {stageLabel(stage.status)}</p>
+        {stageTotals(stage) ? <p className="muted small">{stageTotals(stage)}</p> : null}</div>
       {stage.status === 'failed' && stage.retryable && onRetry ? <button type="button" className="button" disabled={busy} onClick={onRetry}>重试此阶段</button> : null}
     </div>
     <LogViewer runId={runId} nodeId={stage.node_id} version={version} preferredStream={logStream} fallback={updates.length ? <div className="stream" aria-live="polite">
@@ -178,6 +181,33 @@ function StageOutput({ runId, version, logStream, item, busy, onRetry }: { runId
     {stage.outputs?.length ? <div className="stack">{stage.outputs.map((output, index) => <div key={`${output.path ?? output.kind}:${index}`} className="artifact">
       <ResultContent content={output.content} label={output.path || '结果'} detail={`${output.content_bytes} 字节${output.truncated ? ' · 已截断' : ''}`} />
     </div>)}</div> : stage.output_refs?.length ? <SavedOutputs key={stage.output_refs.join()} runId={runId} refs={stage.output_refs} /> : null}
+  </div>
+}
+
+// The run drawn on the flow it executed: each step's state, rounds, tokens and
+// the models it used, on the graph frozen for this run.
+function RunFlow({ runId, stages, observed, onSelect }: { runId: string; stages: FlatStage[]; observed?: Activity['stages']; onSelect(key: string): void }) {
+  const [graph, setGraph] = useState<RunGraph>()
+  const [error, setError] = useState('')
+  useEffect(() => {
+    let active = true
+    setGraph(undefined); setError('')
+    void readRunGraph(runId).then(value => { if (active) setGraph(value) }).catch(failure => { if (active) setError(errorMessage(failure)) })
+    return () => { active = false }
+  }, [runId])
+  const runs = useMemo(() => {
+    const byNode: Record<string, StepRun> = {}
+    for (const stage of observed ?? []) byNode[stage.node_id] = { state: runStageState(stage.status), note: stageLabel(stage.status) }
+    for (const { stage } of stages) {
+      byNode[stage.node_id] = { state: runStageState(stage.status), note: [stageLabel(stage.status), stageTotals(stage)].filter(Boolean).join(' · ') }
+    }
+    return byNode
+  }, [stages, observed])
+  if (error) return <InlineError message={error} />
+  if (!graph || graph.run_id !== runId) return <p className="muted">正在读取流程图…</p>
+  return <div className="stack">
+    <p className="muted small">第 {graph.workflow_version} 版{graph.development_trial ? '（试跑）' : ''} · 内容哈希 <span className="mono" title={graph.content_hash}>{graph.content_hash.slice(0, 12)}</span></p>
+    <FlowCanvas graph={graph.graph_definition} members={[]} runs={runs} onSelect={(id) => { const item = stages.find(entry => entry.stage.node_id === id); if (item) onSelect(item.key) }} />
   </div>
 }
 

@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import fixtureText from '../../../../../internal/kernel/workflow/machine/testdata/code_verify_loop.json?raw'
 import { serialGraph, type Graph } from '../../lib/graph'
 import type { DevelopmentMember } from '../../lib/teams'
-import { layout } from './FlowCanvas'
+import { FlowCanvas, layout } from './FlowCanvas'
 import { addParallelBranch } from '../../lib/workflow-graph'
 import { WorkflowEditor } from './WorkflowEditor'
 
@@ -70,6 +70,21 @@ describe('workflow canvas interactions', () => {
     fireEvent.click(screen.getByRole('button', { name: '编辑步骤 法务审批' }))
     expect(screen.getByRole('region', { name: '人工审批' }).textContent).toContain('核对金额与条款')
     expect(screen.getByText('审批人：法务总监')).toBeTruthy()
+  })
+
+  it('draws a run on its frozen flow without offering edits', () => {
+    const graph = serialGraph(members.slice(0, 2).map(member => ({ member: { id: member.id, displayName: member.id }, label: member.id, requirement: '' })))
+    const selected: string[] = []
+    render(<FlowCanvas graph={graph} members={[]} runs={{ [graph.nodes[0].id]: { state: 'completed', note: '3 轮 · 实际模型 deepseek-flash' } }} onSelect={id => selected.push(id)} />)
+    const done = screen.getByRole('button', { name: '查看步骤 编码' })
+    expect(done.className).toContain('is-run-completed')
+    expect(done.textContent).toContain('3 轮 · 实际模型 deepseek-flash')
+    // Missing evidence must not claim that a step was never reached.
+    expect(screen.getByRole('button', { name: '查看步骤 验证' }).className).toContain('is-run-unknown')
+    expect(screen.getByRole('button', { name: '查看步骤 验证' }).textContent).toContain('未记录步骤状态')
+    expect(screen.queryByRole('button', { name: /编辑步骤/ })).toBeNull()
+    fireEvent.click(done)
+    expect(selected).toEqual([graph.nodes[0].id])
   })
 
   it('renders unsupported raw nodes and exposes a read-only inspector without serial conversion', () => {

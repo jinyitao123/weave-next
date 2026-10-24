@@ -26,6 +26,12 @@
 .flow-editor__node:hover { background: var(--hover); }
 .flow-editor__node.is-selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
 .flow-editor__node.is-feeding { border-color: var(--accent); border-style: dashed; background: var(--accent-soft); }
+.flow-editor__node.is-run-completed { border-color: var(--success); }
+.flow-editor__node.is-run-failed { border-color: var(--danger); background: var(--danger-soft); }
+.flow-editor__node.is-run-running { border-color: var(--accent); border-style: dashed; }
+.flow-editor__node.is-run-pending { opacity: 0.55; }
+.flow-editor__node.is-run-waiting { border-color: var(--warning); }
+.flow-editor__node.is-run-cancelled, .flow-editor__node.is-run-unknown { border-style: dotted; }
 .flow-editor__node.is-hot { border-style: solid; box-shadow: 0 0 0 3px var(--accent-soft); }
 .flow-editor__node > svg { flex-shrink: 0; color: var(--accent); }
 .flow-editor__node > span { min-width: 0; display: grid; }

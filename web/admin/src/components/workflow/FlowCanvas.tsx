@@ -70,9 +70,14 @@ const minHeight = 280, maxHeight = 720, margin = 56
 type Viewport = { x: number; y: number; scale: number }
 
 // Start at readable size. Fitting the whole graph is an explicit overview action.
-export function FlowCanvas({ graph, members, selected, feeds, highlight, onSelect }: {
+/** How one step of a run went, drawn on the step instead of its member. */
+export interface StepRun { state: 'completed' | 'failed' | 'running' | 'pending' | 'waiting' | 'cancelled' | 'unknown'; note?: string }
+
+export function FlowCanvas({ graph, members, selected, feeds, highlight, runs, onSelect }: {
   graph: Graph
   members: DevelopmentMember[]
+  /** A run drawn on its frozen flow: the canvas is then read-only. */
+  runs?: Record<string, StepRun>
   selected?: string
   /** What the selected step receives; drawn as arcs and tags. */
   feeds?: StepFeeds
@@ -209,9 +214,11 @@ export function FlowCanvas({ graph, members, selected, feeds, highlight, onSelec
         const Icon = node.type === 'deliver' ? CheckCircle2 : node.type === 'lead' ? UsersRound : node.type === 'parallel' ? GitBranch : node.type === 'join' ? GitMerge : node.type === 'loop' ? Repeat2 : isApproval(node) ? ShieldCheck : node.type === 'condition' ? Split : Bot
         const title = node.label || kindLabel(node), subtitle = member?.configuration.display_name || kindLabel(node)
         const feeding = selected !== node.id && Boolean(feeds?.nodes.includes(node.id))
-        const classes = ['flow-editor__node', selected === node.id ? 'is-selected' : '', feeding ? 'is-feeding' : '', highlight === node.id ? 'is-hot' : ''].filter(Boolean).join(' ')
-        return <button type="button" key={node.id} style={{ left: position.x, top: position.y, width, height }} className={classes} aria-label={`编辑步骤 ${title}`} aria-pressed={selected === node.id} onClick={() => onSelect(node.id)}>
-          <Icon size={17} /><span><strong>{title}</strong>{subtitle !== title ? <small>{subtitle}</small> : null}</span>
+        const run = runs ? runs[node.id] ?? { state: 'unknown' as const, note: '未记录步骤状态' } : undefined
+        const classes = ['flow-editor__node', selected === node.id ? 'is-selected' : '', feeding ? 'is-feeding' : '', highlight === node.id ? 'is-hot' : '', run ? `is-run-${run.state}` : ''].filter(Boolean).join(' ')
+        const detail = run?.note ?? subtitle
+        return <button type="button" key={node.id} style={{ left: position.x, top: position.y, width, height }} className={classes} title={run ? `${title} · ${detail}` : undefined} aria-label={`${run ? '查看' : '编辑'}步骤 ${title}`} aria-pressed={selected === node.id} onClick={() => onSelect(node.id)}>
+          <Icon size={17} /><span><strong>{title}</strong>{detail !== title ? <small>{detail}</small> : null}</span>
           {feeding ? <em className="flow-editor__tag">输入</em> : null}
         </button>
       })}

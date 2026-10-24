@@ -1,3 +1,4 @@
+import type { Graph } from './graph'
 import { api } from './api'
 
 
@@ -59,6 +60,11 @@ export interface MemberStage {
   public_updates_truncated?: boolean
   failure_class?: string
   retryable?: boolean
+  /** Whole-run totals: rounds started, tokens, and the models calls were sent to. */
+  rounds?: number
+  input_tokens?: number
+  output_tokens?: number
+  models?: string[]
 }
 
 export interface ActivityMember {
@@ -92,6 +98,7 @@ export interface Activity {
   tokens_in?: number
   tokens_out?: number
   members: ActivityMember[]
+  stages?: Array<Pick<MemberStage, 'node_id' | 'name' | 'status'>>
   runtimes: Array<{ name: string; engine?: string; status: string }>
   delivery?: Delivery
   completed_stages: number
@@ -109,6 +116,18 @@ export function listTasks(filter: TaskFilter, before?: string, scope: { team?: s
 
 export const readTask = (runId: string) => api<TaskSummary>(`/v1/admin/tasks/${encodeURIComponent(runId)}`)
 export const readActivity = (runId: string) => api<Activity>(`/v1/runs/${encodeURIComponent(runId)}/activity`)
+/** The flow a run executed, as frozen; its hash was checked when it was read. */
+export interface RunGraph { run_id: string; workflow_id: string; workflow_version: number; content_hash: string; development_trial: boolean; graph_definition: Graph }
+export const readRunGraph = (runId: string) => api<RunGraph>(`/v1/runs/${encodeURIComponent(runId)}/graph`)
+
+// One line of a step's whole-run cost: rounds, tokens and the models used.
+export function stageTotals(stage: Pick<MemberStage, 'rounds' | 'input_tokens' | 'output_tokens' | 'models'>): string {
+  return [
+    stage.rounds && stage.rounds > 1 ? `${stage.rounds} 轮` : '',
+    stage.input_tokens || stage.output_tokens ? `输入 ${stage.input_tokens ?? 0} / 输出 ${stage.output_tokens ?? 0} tokens` : '',
+    stage.models?.length ? `实际模型 ${stage.models.join('、')}` : '',
+  ].filter(Boolean).join(' · ')
+}
 export interface SavedOutput { id: string; title: string; content_type: string; content: string; content_bytes: number; truncated: boolean }
 export const readTaskOutput = (runId: string, outputId: string) => api<SavedOutput>(`/v1/admin/tasks/${encodeURIComponent(runId)}/outputs/${encodeURIComponent(outputId)}`)
 
@@ -176,6 +195,16 @@ const stageCopy: Record<string, string> = {
 }
 
 export const stageLabel = (status: string) => stageCopy[status] ?? '进行中'
+
+export function runStageState(status: string): 'completed' | 'failed' | 'running' | 'pending' | 'waiting' | 'cancelled' | 'unknown' {
+  if (status === 'completed' || status === 'succeeded') return 'completed'
+  if (status === 'failed' || status === 'abandoned') return 'failed'
+  if (status === 'running') return 'running'
+  if (status === 'pending' || status === 'queued') return 'pending'
+  if (status === 'waiting' || status === 'parked' || status === 'paused') return 'waiting'
+  if (status === 'cancelled' || status === 'cancel_requested') return 'cancelled'
+  return 'unknown'
+}
 
 export function duration(ms?: number): string {
   if (!ms || ms < 0) return ''

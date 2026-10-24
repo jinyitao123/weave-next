@@ -465,10 +465,17 @@ type runActivityMemberStage struct {
 	DurationMs             int64                             `json:"duration_ms,omitempty"`
 	ToolCalls              int                               `json:"tool_calls,omitempty"`
 	Tools                  []runActivityTool                 `json:"tools"`
-	FailureClass           string                            `json:"failure_class,omitempty"`
-	FailureReason          string                            `json:"failure_reason,omitempty"`
-	AuthorizationRequired  *execution.AuthorizationRefusal   `json:"authorization_required,omitempty"`
-	Retryable              bool                              `json:"retryable,omitempty"`
+	// Rounds, tokens and models cover the whole run, not the recent window:
+	// each round of a check loop starts the step again, and models are those
+	// the calls were actually sent to.
+	Rounds                int                             `json:"rounds,omitempty"`
+	InputTokens           int64                           `json:"input_tokens,omitempty"`
+	OutputTokens          int64                           `json:"output_tokens,omitempty"`
+	Models                []string                        `json:"models,omitempty"`
+	FailureClass          string                          `json:"failure_class,omitempty"`
+	FailureReason         string                          `json:"failure_reason,omitempty"`
+	AuthorizationRequired *execution.AuthorizationRefusal `json:"authorization_required,omitempty"`
+	Retryable             bool                            `json:"retryable,omitempty"`
 }
 
 type runActivityTool struct {
@@ -792,6 +799,22 @@ func runActivityDeliverables(items []deliverable.FinalDeliverable) ([]runActivit
 		stages = append(stages, runActivityStage{NodeID: metadata.NodeID, Name: name, Status: "completed"})
 	}
 	return refs, stages
+}
+
+// applyRunStageTotals adds each step's whole-run rounds, tokens and models.
+func applyRunStageTotals(members []runActivityMember, totals []teamrun.ActivityStageTotals) {
+	for _, total := range totals {
+		for index := range members {
+			if members[index].AgentID != total.MemberID {
+				continue
+			}
+			for stageIndex := range members[index].Stages {
+				if stage := &members[index].Stages[stageIndex]; stage.NodeID == total.NodeID {
+					stage.Rounds, stage.InputTokens, stage.OutputTokens, stage.Models = total.Rounds, total.InputTokens, total.OutputTokens, total.Models
+				}
+			}
+		}
+	}
 }
 
 func applyRunActivityEvents(members []runActivityMember, events []teamrun.ActivityEvent) {
@@ -1286,6 +1309,11 @@ func (s *Server) handleGetRunActivity(c echo.Context) error {
 			activityEvents = items
 			applyRunActivityEvents(members, activityEvents)
 			completeness["member_tool_activity"] = "partial"
+		}
+		completeness["stage_totals"] = "unavailable"
+		if totals, totalsErr := s.teamRunActivities.StageTotals(c.Request().Context(), getTenant(c), run.RunID); totalsErr == nil {
+			applyRunStageTotals(members, totals)
+			completeness["stage_totals"] = "complete"
 		}
 	}
 	s.projectMemberCheckpoints(c.Request().Context(), run, members)

@@ -482,6 +482,7 @@ func (s *Server) registerRoutes() {
 	auth.POST("/workbench/runs/lookup", s.handleLookupWorkbenchRuns)
 	auth.GET("/runs/:id", s.handleGetRun)
 	auth.GET("/runs/:id/activity", s.handleGetRunActivity)
+	auth.GET("/runs/:id/graph", s.handleGetRunGraph)
 	auth.GET("/runs/:id/delivery", s.handleGetRunDelivery)
 	auth.POST("/runs/:id/delivery/recheck", s.handleRecheckRunDelivery)
 	auth.GET("/runs/:id/delivery/verifications/:verification_id", s.handleGetRunVerification)
