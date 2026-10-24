@@ -40,6 +40,11 @@ export interface MemberConfiguration {
   max_tokens?: number
   max_output_tokens?: number
   reasoning_effort?: string
+  /** enabled or disabled; empty leaves the provider default. Must be declared by the model's provider. */
+  thinking?: string
+  /** null leaves the provider default; 0 is an explicit value. Must be declared by the model's provider. */
+  temperature?: number | null
+  top_p?: number | null
   first_chunk_timeout_ms?: number
   idle_timeout_ms?: number
   /** Bounds each model call from its request to its end; 0 leaves only the step limit. */

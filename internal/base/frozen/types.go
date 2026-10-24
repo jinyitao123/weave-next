@@ -92,6 +92,12 @@ type FrozenRequestProfile struct {
 	// CallTimeoutMS bounds one streamed model call from its request to its
 	// end, however steadily output arrives; zero leaves only the outer bounds.
 	CallTimeoutMS int64 `json:"call_timeout_ms,omitempty"`
+	// Thinking is sent as the provider's thinking switch, one of ThinkingModes.
+	Thinking string `json:"thinking,omitempty"`
+	// Temperature and TopP are sent as temperature and top_p. Nil leaves the
+	// provider default, so an explicit 0 stays apart from unset.
+	Temperature *float64 `json:"temperature,omitempty"`
+	TopP        *float64 `json:"top_p,omitempty"`
 }
 
 // MaxWaitTimeoutMS is the longest stage wait a member may set: one hour.
@@ -120,6 +126,20 @@ func ValidateRequestProfile(profile FrozenRequestProfile) error {
 	// A stage wait as long as the whole call never fires.
 	if profile.CallTimeoutMS > 0 && (profile.FirstChunkTimeoutMS >= profile.CallTimeoutMS || profile.IdleTimeoutMS >= profile.CallTimeoutMS) {
 		return fmt.Errorf("first_chunk_timeout_ms and idle_timeout_ms must be shorter than call_timeout_ms")
+	}
+	if profile.Thinking != "" && !slices.Contains(ThinkingModes, profile.Thinking) {
+		return fmt.Errorf("thinking %q is not one of %v", profile.Thinking, ThinkingModes)
+	}
+	// Asking for reasoning while switching thinking off is a contradiction the
+	// provider would resolve its own way.
+	if profile.Thinking == "disabled" && profile.ReasoningEffort != "" && profile.ReasoningEffort != "none" {
+		return fmt.Errorf("reasoning_effort %q contradicts thinking disabled", profile.ReasoningEffort)
+	}
+	if value := profile.Temperature; value != nil && (!finite(*value) || *value < 0 || *value > MaxTemperature) {
+		return fmt.Errorf("temperature must be between 0 and %d", MaxTemperature)
+	}
+	if value := profile.TopP; value != nil && (!finite(*value) || *value < 0 || *value > MaxTopP) {
+		return fmt.Errorf("top_p must be between 0 and %d", MaxTopP)
 	}
 	return nil
 }
@@ -151,8 +171,8 @@ type FrozenAgentRecord struct {
 	// RequestProfile is omitted when empty, so versions without one keep
 	// their content hash.
 	RequestProfile *FrozenRequestProfile `json:"request_profile,omitempty"`
-	GraphType    string                        `json:"graph_type"`
-	FactoryInput json.RawMessage               `json:"factory_input"`
+	GraphType      string                `json:"graph_type"`
+	FactoryInput   json.RawMessage       `json:"factory_input"`
 	// BusinessCapabilityIDs are the exact Forge actions selected by the
 	// developer and frozen into this published agent version.
 	BusinessCapabilityIDs      []string                    `json:"business_capability_ids,omitempty"`
@@ -254,18 +274,21 @@ type FrozenMCPBinding struct {
 type FrozenModelBinding struct {
 	SchemaVersion int `json:"schema_version"`
 
-	WorkspaceID      string              `json:"workspace_id"`
-	ProviderID       string              `json:"provider_id"`
-	ProviderRevision int64               `json:"provider_revision"`
-	ModelID          string              `json:"model_id"`
-	BaseURL          string              `json:"base_url"`
-	JSONObjectMode   bool                `json:"json_object_mode"`
+	WorkspaceID      string `json:"workspace_id"`
+	ProviderID       string `json:"provider_id"`
+	ProviderRevision int64  `json:"provider_revision"`
+	ModelID          string `json:"model_id"`
+	BaseURL          string `json:"base_url"`
+	JSONObjectMode   bool   `json:"json_object_mode"`
 	// Protocol is the provider wire protocol. Empty means OpenAI-compatible
 	// chat completions, so existing bindings keep their content hash;
 	// ModelProtocolSystemOne selects the System One decision protocol.
-	Protocol      string              `json:"protocol,omitempty"`
-	ChatPath      string              `json:"chat_path,omitempty"` // appended to BaseURL; empty keeps the pre-chat-path address and hash
-	OutputLimit   string              `json:"output_limit_field,omitempty"`
+	Protocol    string `json:"protocol,omitempty"`
+	ChatPath    string `json:"chat_path,omitempty"` // appended to BaseURL; empty keeps the pre-chat-path address and hash
+	OutputLimit string `json:"output_limit_field,omitempty"`
+	// Parameters is the provider's declaration for this model; nil when the
+	// provider declared none, which keeps pre-declaration bindings' hashes.
+	Parameters    *ModelParameters    `json:"model_parameters,omitempty"`
 	CredentialRef CredentialReference `json:"credential_ref"`
 	ContentHash   string              `json:"content_hash"`
 }

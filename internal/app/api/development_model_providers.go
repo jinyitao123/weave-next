@@ -2,10 +2,12 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -38,6 +40,9 @@ type developmentModelProvider struct {
 	// OutputLimitField is the Chat Completions field the output limit is sent
 	// as; empty means max_tokens.
 	OutputLimitField string `json:"output_limit_field"`
+	// ModelParameters declares per model ID the request values members may
+	// set; a model left out has no declaration.
+	ModelParameters map[string]frozen.ModelParameters `json:"model_parameters"`
 	// Protocol is "openai" (chat completions) or "systemone" (decision models).
 	Protocol       string `json:"protocol"`
 	HasAPIKey      bool   `json:"has_api_key"`
@@ -54,7 +59,7 @@ func (s *Server) handleListDevelopmentModelProviders(c echo.Context) error {
 	if pool == nil {
 		return workflowError(c, http.StatusServiceUnavailable, "development_model_provider_unavailable", "组织模型暂时无法读取")
 	}
-	rows, err := pool.Query(c.Request().Context(), `SELECT id,name,base_url,models,source_kind,protocol,api_key_set,json_object_mode,chat_path,output_limit_field FROM weave_provider_credentials
+	rows, err := pool.Query(c.Request().Context(), `SELECT id,name,base_url,models,source_kind,protocol,api_key_set,json_object_mode,chat_path,output_limit_field,model_parameters FROM weave_provider_credentials
 		WHERE workspace_id=$1 AND credential_scope='workspace_service' AND enabled AND revoked_at IS NULL AND deleted_at IS NULL AND latest_revision > 0
 		ORDER BY name,id`, getTenant(c))
 	if err != nil {
@@ -65,7 +70,11 @@ func (s *Server) handleListDevelopmentModelProviders(c echo.Context) error {
 	for rows.Next() {
 		var provider developmentModelProvider
 		var source string
-		if err := rows.Scan(&provider.ID, &provider.Name, &provider.BaseURL, &provider.Models, &source, &provider.Protocol, &provider.HasAPIKey, &provider.JSONObjectMode, &provider.ChatPath, &provider.OutputLimitField); err != nil {
+		var parameters []byte
+		if err := rows.Scan(&provider.ID, &provider.Name, &provider.BaseURL, &provider.Models, &source, &provider.Protocol, &provider.HasAPIKey, &provider.JSONObjectMode, &provider.ChatPath, &provider.OutputLimitField, &parameters); err != nil {
+			return workflowStoreFailure(c, err)
+		}
+		if err := json.Unmarshal(parameters, &provider.ModelParameters); err != nil {
 			return workflowStoreFailure(c, err)
 		}
 		provider.ChatURL = frozen.ResolveProviderEndpoint(provider.Protocol, provider.BaseURL, provider.ChatPath).URL()
@@ -104,6 +113,9 @@ func (s *Server) handlePutDevelopmentModelProvider(c echo.Context) error {
 		// OutputLimitField is max_tokens or max_completion_tokens; omitted keeps
 		// the current declaration and "" clears it.
 		OutputLimitField *string `json:"output_limit_field"`
+		// ModelParameters declares per model ID the request values members may
+		// set; omitted keeps the current declarations and {} clears them.
+		ModelParameters *map[string]frozen.ModelParameters `json:"model_parameters"`
 	}
 	if err := decodeWorkflowBody(c, &request); err != nil {
 		return workflowSchemaError(c)
@@ -163,8 +175,9 @@ func (s *Server) handlePutDevelopmentModelProvider(c echo.Context) error {
 	// JSON Schema output.
 	var scope, source, currentProtocol, currentChatPath, currentOutputLimit string
 	var currentJSONObjectMode bool
-	err = tx.QueryRow(ctx, `SELECT credential_scope,source_kind,protocol,json_object_mode,chat_path,output_limit_field FROM weave_provider_credentials WHERE workspace_id=$1 AND id=$2`,
-		tenant, id).Scan(&scope, &source, &currentProtocol, &currentJSONObjectMode, &currentChatPath, &currentOutputLimit)
+	var currentParameters []byte
+	err = tx.QueryRow(ctx, `SELECT credential_scope,source_kind,protocol,json_object_mode,chat_path,output_limit_field,model_parameters FROM weave_provider_credentials WHERE workspace_id=$1 AND id=$2`,
+		tenant, id).Scan(&scope, &source, &currentProtocol, &currentJSONObjectMode, &currentChatPath, &currentOutputLimit, &currentParameters)
 	existing := err == nil
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
@@ -200,6 +213,10 @@ func (s *Server) handlePutDevelopmentModelProvider(c echo.Context) error {
 	}
 	if err := frozen.ValidateOutputLimitField("", outputLimit); err != nil {
 		return invalid("输出上限字段只能是 max_tokens 或 max_completion_tokens")
+	}
+	parameters, refusal := requestedModelParameters(request.ModelParameters, currentParameters, models, protocol)
+	if refusal != "" {
+		return invalid(refusal)
 	}
 	chatPath := request.ChatPath
 	if chatPath == nil && currentChatPath != "" {
@@ -241,7 +258,7 @@ func (s *Server) handlePutDevelopmentModelProvider(c echo.Context) error {
 	result, err := s.Credentials.UpsertRevisionTx(authorized, tx, tenant, llmrouter.ProviderConfig{
 		CredentialScope: frozen.CredentialScopeWorkspaceService, CredentialServiceID: service,
 		ID: id, Name: name, BaseURL: endpoint.BaseURL, ChatPath: endpoint.ChatPath, OutputLimitField: outputLimit, Protocol: protocol, APIKey: key, Models: models,
-		JSONObjectMode: jsonObjectMode,
+		JSONObjectMode: jsonObjectMode, ModelParameters: parameters,
 	}, options...)
 	if err != nil {
 		var coded *credentials.Error
@@ -264,7 +281,53 @@ func (s *Server) handlePutDevelopmentModelProvider(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]any{
 		"id": id, "name": name, "protocol": protocol, "models": models, "json_object_mode": jsonObjectMode,
 		"base_url": endpoint.BaseURL, "chat_path": endpoint.ChatPath, "chat_url": frozen.ResolveProviderEndpoint(protocol, endpoint.BaseURL, endpoint.ChatPath).URL(),
-		"output_limit_field": outputLimit,
-		"key_replaced":       key != "", "key_cleared": clearKey, "has_api_key": result.Head.APIKeySet,
+		"output_limit_field": outputLimit, "model_parameters": modelParametersView(parameters),
+		"key_replaced": key != "", "key_cleared": clearKey, "has_api_key": result.Head.APIKeySet,
 	})
+}
+
+// requestedModelParameters resolves the declarations a provider update saves.
+// Omitted keeps the current ones for the models still served; sent ones must
+// name served models and be valid. The refusal is a message for the developer.
+func requestedModelParameters(requested *map[string]frozen.ModelParameters, current []byte, models []string, protocol string) (map[string]frozen.ModelParameters, string) {
+	values := map[string]frozen.ModelParameters{}
+	if requested == nil {
+		if len(current) > 0 {
+			if err := json.Unmarshal(current, &values); err != nil {
+				return nil, "已保存的模型参数声明无法读取"
+			}
+		}
+		for model := range values {
+			if !slices.Contains(models, model) {
+				delete(values, model) // a model no longer served takes its declaration with it
+			}
+		}
+	} else if *requested != nil {
+		values = *requested
+	}
+	if len(values) == 0 {
+		return nil, ""
+	}
+	if protocol != llmrouter.ProtocolOpenAI {
+		return nil, "只有 OpenAI 兼容协议的供应方可以声明模型参数"
+	}
+	normalized := make(map[string]frozen.ModelParameters, len(values))
+	for model, declared := range values {
+		if !slices.Contains(models, model) {
+			return nil, "模型参数声明了供应方未提供的模型“" + model + "”"
+		}
+		value, err := frozen.NormalizeModelParameters(declared)
+		if err != nil {
+			return nil, "模型“" + model + "”的参数声明无效：" + err.Error()
+		}
+		normalized[model] = value
+	}
+	return normalized, ""
+}
+
+func modelParametersView(values map[string]frozen.ModelParameters) map[string]frozen.ModelParameters {
+	if values == nil {
+		return map[string]frozen.ModelParameters{}
+	}
+	return values
 }

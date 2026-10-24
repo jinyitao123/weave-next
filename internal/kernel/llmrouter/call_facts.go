@@ -48,6 +48,10 @@ type CallRequest struct {
 	ResponseFormat   string `json:"response_format,omitempty"`
 	OutputLimitField string `json:"output_limit_field,omitempty"`
 	OutputLimit      int    `json:"output_limit,omitempty"`
+	// Temperature and TopP report that the value was sent; the member's
+	// frozen request settings hold the value itself.
+	Temperature bool `json:"temperature,omitempty"`
+	TopP        bool `json:"top_p,omitempty"`
 }
 
 type callFactsKey struct{}
@@ -70,7 +74,8 @@ func callFactsFrom(value contract.ProtocolObservation) CallFacts {
 	if options := value.RequestOptions; options != nil {
 		facts.Request = &CallRequest{Model: options.Model, Stream: options.Stream, ReasoningEffort: options.ReasoningEffort,
 			Thinking: options.Thinking, ResponseFormat: options.ResponseFormat,
-			OutputLimitField: options.OutputLimit, OutputLimit: options.OutputLimitValue}
+			OutputLimitField: options.OutputLimit, OutputLimit: options.OutputLimitValue,
+			Temperature: options.Temperature, TopP: options.TopP}
 	}
 	return facts
 }

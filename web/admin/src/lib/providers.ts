@@ -7,6 +7,17 @@ export type ProviderProtocol = 'openai' | 'systemone'
 export type ThinkingMode = '' | 'enabled' | 'disabled'
 export type OutputLimitField = '' | 'max_tokens' | 'max_completion_tokens'
 
+/** A sampling bound, both ends included. */
+export interface ModelParameterRange { min: number; max: number }
+
+/** What one model accepts from members; a field left out accepts no explicit value. */
+export interface ModelParameters {
+  reasoning_efforts?: string[]
+  thinking?: string[]
+  temperature?: ModelParameterRange
+  top_p?: ModelParameterRange
+}
+
 export interface Provider {
   id: string
   name: string
@@ -23,6 +34,8 @@ export interface Provider {
   json_object_mode?: boolean
   /** The field the output limit is sent as; empty means max_tokens. */
   output_limit_field?: OutputLimitField
+  /** Per model ID, the request values members may set. */
+  model_parameters?: Record<string, ModelParameters>
   thinking_default_mode?: ThinkingMode
   thinking_disable_with_tools?: boolean
   attempt_timeout_seconds?: number
@@ -50,6 +63,8 @@ export interface ProviderInput {
   models: string[]
   json_object_mode: boolean
   output_limit_field: OutputLimitField
+  /** Sent only when edited: left out, the server keeps the current declarations. */
+  model_parameters?: Record<string, ModelParameters>
 }
 
 /** What happens to the stored key on save. A new provider only keeps or replaces. */
@@ -78,8 +93,29 @@ export function providerBody(input: ProviderInput, key: KeyChange): Record<strin
   const tuning = input.protocol === 'openai' ? {
     json_object_mode: input.json_object_mode,
     output_limit_field: input.output_limit_field,
+    ...(input.model_parameters ? { model_parameters: input.model_parameters } : {}),
   } : {}
   return { ...base, ...tuning, ...keyPayload(key) }
+}
+
+/** The declarations as the editor shows them; empty when there are none. */
+export function modelParametersText(values?: Record<string, ModelParameters>): string {
+  return values && Object.keys(values).length ? JSON.stringify(values, null, 2) : ''
+}
+
+/** Reads the editor's text: empty clears every declaration. The server checks the values. */
+export function parseModelParameters(text: string): { value?: Record<string, ModelParameters>; problem?: string } {
+  if (!text.trim()) return { value: {} }
+  const problem = '模型参数声明须是以模型名为键、每项为对象的 JSON'
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    return { problem }
+  }
+  const isObject = (value: unknown) => typeof value === 'object' && value !== null && !Array.isArray(value)
+  if (!isObject(parsed) || !Object.values(parsed as object).every(isObject)) return { problem }
+  return { value: parsed as Record<string, ModelParameters> }
 }
 
 export function providerInput(provider?: Provider): ProviderInput {

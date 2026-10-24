@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Badge, Drawer, EmptyState, InlineError, Select, Switch } from '../components/ui'
 import type { AdminSession } from '../lib/api'
 import {
-  cleanModels, deleteProvider, endpointRefusal, hasKey, listProviders, listSystemProviders, mirrorSystemProvider, probeProvider, protocolLabels, protocolOf, providerError, providerInput, resolveEndpoint, saveProvider, validBaseURL,
+  cleanModels, deleteProvider, endpointRefusal, hasKey, listProviders, listSystemProviders, mirrorSystemProvider, modelParametersText, parseModelParameters, probeProvider, protocolLabels, protocolOf, providerError, providerInput, resolveEndpoint, saveProvider, validBaseURL,
   type Endpoint, type EndpointRefusal, type KeyChange, type ProbeResult, type Provider, type ProviderInput, type ProviderProtocol, type SystemProvider,
 } from '../lib/providers'
 import { loadModelCatalog } from '../lib/teams'
@@ -125,6 +125,8 @@ function ProviderDrawer({ provider, existing, editable, canDelete, onClose, onSa
   const [probeModel, setProbeModel] = useState(provider?.models?.[0] ?? '')
   const [probing, setProbing] = useState(false)
   const [probe, setProbe] = useState<ProbeResult>()
+  // Declarations travel only once edited; left alone, the server keeps them.
+  const [parameters, setParameters] = useState(() => ({ text: modelParametersText(provider?.model_parameters), edited: false }))
   const stored = provider ? hasKey(provider) : false
   // The address is resolved by the server, the same way it is saved.
   useEffect(() => {
@@ -169,6 +171,8 @@ function ProviderDrawer({ provider, existing, editable, canDelete, onClose, onSa
     if (!validBaseURL(form.base_url)) { setError('地址须以 http:// 或 https:// 开头'); return }
     const { models, problem } = cleanModels(form.models)
     if (problem) { setError(problem); return }
+    const declared = parameters.edited ? parseModelParameters(parameters.text) : {}
+    if (declared.problem) { setError(declared.problem); return }
     let change: KeyChange
     if (keyMode === 'replace') {
       if (key.trim()) change = { kind: 'replace', value: key.trim() }
@@ -177,7 +181,7 @@ function ProviderDrawer({ provider, existing, editable, canDelete, onClose, onSa
     } else change = { kind: keyMode }
     setBusy(true)
     try {
-      await saveProvider({ ...form, name, base_url: form.base_url.trim(), models }, change, provider?.id)
+      await saveProvider({ ...form, name, base_url: form.base_url.trim(), models, model_parameters: declared.value }, change, provider?.id)
       onSaved()
     } catch (failure) {
       const refusal = endpointRefusal(failure)
@@ -256,6 +260,11 @@ function ProviderDrawer({ provider, existing, editable, canDelete, onClose, onSa
           <div className="field"><span>输出上限字段</span><Select label="输出上限字段" value={form.output_limit_field || 'max_tokens'} disabled={!editable}
             options={[{ value: 'max_tokens', label: 'max_tokens（默认）' }, { value: 'max_completion_tokens', label: 'max_completion_tokens（推理模型和部分兼容服务要求）' }]}
             onChange={(field) => set('output_limit_field', field === 'max_tokens' ? '' : field as 'max_completion_tokens')} /></div>
+          <label className="field"><span>模型参数声明（JSON）</span>
+            <textarea className="input textarea" rows={6} value={parameters.text} disabled={!editable} spellCheck={false}
+              placeholder={'{"模型名": {"reasoning_efforts": ["low", "high"], "thinking": ["enabled", "disabled"], "temperature": {"min": 0, "max": 1}, "top_p": {"min": 0, "max": 1}}}'}
+              onChange={(event) => { setParameters({ text: event.target.value, edited: true }); setError('') }} /></label>
+          <p className="muted small">按模型声明成员可设置的推理档位、思考开关和 temperature/top_p 范围；随供应方版本冻结进发布。未声明的模型只接受推理档位，成员设置的思考开关或采样参数会在发布时被拒绝。留空保存会清除全部声明。</p>
         </div>
       </details> : null}
 

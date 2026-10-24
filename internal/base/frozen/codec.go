@@ -363,7 +363,8 @@ func HashDTO(value any, schema PreorderSchema) (string, error) {
 			SchemaVersion: typed.SchemaVersion, WorkspaceID: typed.WorkspaceID,
 			ProviderID: typed.ProviderID, ProviderRevision: typed.ProviderRevision,
 			ModelID: typed.ModelID, BaseURL: typed.BaseURL,
-			JSONObjectMode: typed.JSONObjectMode, Protocol: typed.Protocol, ChatPath: typed.ChatPath, OutputLimit: typed.OutputLimit, CredentialRef: typed.CredentialRef,
+			JSONObjectMode: typed.JSONObjectMode, Protocol: typed.Protocol, ChatPath: typed.ChatPath, OutputLimit: typed.OutputLimit,
+			Parameters: typed.Parameters, CredentialRef: typed.CredentialRef,
 		}
 	case FrozenRuntimeBinding:
 		normalized = frozenRuntimeHashInput{
@@ -785,6 +786,16 @@ func normalizeFrozenModelBinding(value FrozenModelBinding) (FrozenModelBinding, 
 	if err := ValidateOutputLimitField(cloned.Protocol, cloned.OutputLimit); err != nil {
 		return FrozenModelBinding{}, err
 	}
+	if cloned.Parameters != nil {
+		if cloned.Protocol != "" {
+			return FrozenModelBinding{}, errors.New("model_parameters are declared only for OpenAI-compatible providers")
+		}
+		parameters, err := NormalizeModelParameters(*cloned.Parameters)
+		if err != nil {
+			return FrozenModelBinding{}, err
+		}
+		cloned.Parameters = &parameters
+	}
 	if err := ValidateCredentialReference(cloned.CredentialRef); err != nil ||
 		cloned.CredentialRef.Kind != CredentialProviderAPIKey ||
 		cloned.CredentialRef.WorkspaceID != cloned.WorkspaceID ||
@@ -1171,6 +1182,9 @@ func normalizeFrozenExecutionBundle(
 			normalizeFrozenModelBinding(cloned.FallbackModels[index]); err != nil {
 			return FrozenExecutionBundle{}, err
 		}
+	}
+	if err := ValidateBundleRequestProfile(cloned); err != nil {
+		return FrozenExecutionBundle{}, err
 	}
 	if cloned.Runtime != nil {
 		runtime, runtimeErr := normalizeFrozenRuntimeBinding(*cloned.Runtime)
@@ -1937,6 +1951,7 @@ type frozenModelHashInput struct {
 	Protocol         string              `json:"protocol,omitempty"`
 	ChatPath         string              `json:"chat_path,omitempty"`
 	OutputLimit      string              `json:"output_limit_field,omitempty"`
+	Parameters       *ModelParameters    `json:"model_parameters,omitempty"`
 	CredentialRef    CredentialReference `json:"credential_ref"`
 }
 

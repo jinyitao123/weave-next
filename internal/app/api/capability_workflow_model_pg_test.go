@@ -209,6 +209,11 @@ func runCapabilityWorkflowModelScenario(t *testing.T, parallel bool, maxConns []
 		CredentialScope: frozen.CredentialScopeWorkspaceService, CredentialServiceID: "provider:fixture",
 		ID: "fixture", Name: "Controlled local model", BaseURL: provider.URL, APIKey: "controlled-model-secret",
 		Models: []string{capabilityWorkflowModelName},
+		// The provider declares what members of this model may set (#82).
+		ModelParameters: map[string]frozen.ModelParameters{capabilityWorkflowModelName: {
+			ReasoningEfforts: []string{"high"}, Thinking: []string{"enabled", "disabled"},
+			Temperature: &frozen.ParameterRange{Min: 0, Max: 1}, TopP: &frozen.ParameterRange{Min: 0, Max: 1},
+		}},
 	}); err != nil {
 		t.Fatalf("install workspace model provider: %v", err)
 	}
@@ -475,11 +480,17 @@ func runCapabilityWorkflowModelScenario(t *testing.T, parallel bool, maxConns []
 	if strings.Contains(strings.ToLower(string(requests[0])), "tool_choice") {
 		t.Fatal("pure computation invocation unexpectedly requested a model tool call")
 	}
-	// The member that froze a reasoning effort sends exactly it. Members that
-	// left it unset send no reasoning_effort, so the provider default applies.
+	// The member that froze request settings sends exactly them: an explicit
+	// temperature 0 included. Members that left them unset send none of these
+	// fields, so the provider default applies.
 	for _, body := range requests {
 		var wire struct {
-			ReasoningEffort *string `json:"reasoning_effort"`
+			ReasoningEffort *string  `json:"reasoning_effort"`
+			Temperature     *float64 `json:"temperature"`
+			TopP            *float64 `json:"top_p"`
+			Thinking        *struct {
+				Type string `json:"type"`
+			} `json:"thinking"`
 		}
 		if err := json.Unmarshal(body, &wire); err != nil {
 			t.Fatal(err)
@@ -488,8 +499,11 @@ func runCapabilityWorkflowModelScenario(t *testing.T, parallel bool, maxConns []
 		switch {
 		case finalMember && (wire.ReasoningEffort == nil || *wire.ReasoningEffort != "high"):
 			t.Fatalf("member with reasoning_effort high sent %v", wire.ReasoningEffort)
-		case !finalMember && wire.ReasoningEffort != nil:
-			t.Fatalf("member without a reasoning effort sent reasoning_effort %q", *wire.ReasoningEffort)
+		case finalMember && (wire.Temperature == nil || *wire.Temperature != 0 || wire.TopP == nil || *wire.TopP != 0.9 ||
+			wire.Thinking == nil || wire.Thinking.Type != "enabled"):
+			t.Fatalf("member with thinking enabled, temperature 0 and top_p 0.9 sent %s", body)
+		case !finalMember && (wire.ReasoningEffort != nil || wire.Temperature != nil || wire.TopP != nil || wire.Thinking != nil):
+			t.Fatalf("member without request settings sent some: %s", body)
 		}
 	}
 }
@@ -664,8 +678,10 @@ func publishCapabilityModelWorkflow(
 			Spec: stdlib.AgentSpec{SystemPrompt: prompt},
 		}
 		if role == "final" {
-			// Only this member chooses a reasoning effort; the others leave it unset.
-			record.RequestProfile = &frozen.FrozenRequestProfile{ReasoningEffort: "high"}
+			// Only this member chooses request settings; the others leave them unset.
+			temperature, topP := 0.0, 0.9
+			record.RequestProfile = &frozen.FrozenRequestProfile{ReasoningEffort: "high", Thinking: "enabled",
+				Temperature: &temperature, TopP: &topP}
 		}
 		if err := leadRegistry.Put(ctx, "ws", record); err != nil {
 			t.Fatalf("create published Loom worker %q: %v", role, err)

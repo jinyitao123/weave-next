@@ -127,6 +127,7 @@ const (
 	CodeAgentSubAgentsForbidden           = "workflow_agent_sub_agents_forbidden"
 	CodeAgentWorkerStepForbidden          = "workflow_agent_worker_step_forbidden"
 	CodeAgentOutputSchemaInvalid          = "workflow_agent_output_schema_invalid"
+	CodeAgentModelParameterUndeclared     = "workflow_agent_model_parameter_undeclared"
 	CodeHandoffOutputContractIncompatible = "workflow_handoff_output_contract_incompatible"
 	CodeDependencyProofMissing            = "workflow_dependency_proof_missing"
 	CodeDependencyUnprovable              = "workflow_dependency_unprovable"

@@ -273,6 +273,25 @@ describe('member editor', () => {
     expect(screen.queryByRole('button', { name: '编码的推理档位' })).toBeNull()
   })
 
+  it('sets thinking and sampling for built-in members, keeping an explicit 0 apart from unset', () => {
+    let last: DevelopmentDocument | undefined
+    render(<Controlled changed={(next) => { last = next }} />)
+    pick(/^整理/)
+    tab('执行')
+    fireEvent.click(screen.getByRole('button', { name: '整理的思考开关' }))
+    fireEvent.mouseDown(screen.getByRole('option', { name: '关闭（disabled）' }))
+    expect(saved(last, 'w-loom')?.configuration.thinking).toBe('disabled')
+    const temperature = screen.getByLabelText('整理的temperature')
+    fireEvent.change(temperature, { target: { value: '0' } })
+    expect(saved(last, 'w-loom')?.configuration.temperature).toBe(0)
+    fireEvent.change(temperature, { target: { value: '' } })
+    expect(saved(last, 'w-loom')?.configuration.temperature).toBeNull()
+    fireEvent.change(screen.getByLabelText('整理的top_p'), { target: { value: '0.9' } })
+    expect(saved(last, 'w-loom')?.configuration.top_p).toBe(0.9)
+    pick(/^编码/)
+    expect(screen.queryByLabelText('编码的temperature')).toBeNull()
+  })
+
   it('offers catalog models for built-in engines', async () => {
     render(<Controlled />)
     pick(/^整理/)

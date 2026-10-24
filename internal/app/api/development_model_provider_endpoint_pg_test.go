@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -95,6 +96,44 @@ func TestDevelopmentModelProviderChatPathRealPG(t *testing.T) {
 	}
 	if status, _ := call(http.MethodPut, "/v1/development/model-providers/glm", map[string]any{"name": "GLM renamed", "base_url": upstream.URL + "/api/paas/v4", "models": []string{"glm"}, "output_limit_field": "max_output_tokens"}); status != http.StatusUnprocessableEntity {
 		t.Fatalf("unknown output limit field = %d", status)
+	}
+
+	// Model parameter declarations are saved per model, kept when omitted,
+	// listed, cleared with {}, and refused for a model the provider does not
+	// serve or a value no member could request (#82).
+	glm := func(extra map[string]any) map[string]any {
+		body := map[string]any{"name": "GLM renamed", "base_url": upstream.URL + "/api/paas/v4", "models": []string{"glm"}}
+		for key, value := range extra {
+			body[key] = value
+		}
+		return body
+	}
+	declaration := map[string]any{"glm": map[string]any{"reasoning_efforts": []string{"high", "low"}, "temperature": map[string]any{"min": 0, "max": 1}}}
+	parametersOf := func(body map[string]any) string {
+		raw, _ := json.Marshal(body["model_parameters"])
+		return string(raw)
+	}
+	const declared = `{"glm":{"reasoning_efforts":["low","high"],"temperature":{"max":1,"min":0}}}`
+	if status, saved := call(http.MethodPut, "/v1/development/model-providers/glm", glm(map[string]any{"model_parameters": declaration})); status != http.StatusOK || parametersOf(saved) != declared {
+		t.Fatalf("declare model parameters = %d %v", status, saved)
+	}
+	if status, kept := call(http.MethodPut, "/v1/development/model-providers/glm", glm(nil)); status != http.StatusOK || parametersOf(kept) != declared {
+		t.Fatalf("omitted model parameters = %d %v", status, kept)
+	}
+	if status, listed := call(http.MethodGet, "/v1/development/model-providers", nil); status != http.StatusOK || !strings.Contains(fmt.Sprint(listed["providers"]), "reasoning_efforts") {
+		t.Fatalf("listed providers = %d %v", status, listed)
+	}
+	for name, parameters := range map[string]any{
+		"unserved model": map[string]any{"other": map[string]any{}},
+		"unknown effort": map[string]any{"glm": map[string]any{"reasoning_efforts": []string{"extreme"}}},
+		"top_p above 1":  map[string]any{"glm": map[string]any{"top_p": map[string]any{"min": 0, "max": 2}}},
+	} {
+		if status, refused := call(http.MethodPut, "/v1/development/model-providers/glm", glm(map[string]any{"model_parameters": parameters})); status != http.StatusUnprocessableEntity {
+			t.Fatalf("%s = %d %v", name, status, refused)
+		}
+	}
+	if status, cleared := call(http.MethodPut, "/v1/development/model-providers/glm", glm(map[string]any{"model_parameters": map[string]any{}})); status != http.StatusOK || parametersOf(cleared) != `{}` {
+		t.Fatalf("cleared model parameters = %d %v", status, cleared)
 	}
 
 	// A new provider without a path records the address its client always used.

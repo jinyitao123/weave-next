@@ -58,6 +58,9 @@ type ProviderConfig struct {
 	// OutputLimitField selects the Chat Completions field the output limit is
 	// sent as: max_completion_tokens, or max_tokens when empty.
 	OutputLimitField string `json:"output_limit_field,omitempty"`
+	// ModelParameters declares, per served model ID, the request values a
+	// member may set; a model left out has no declaration.
+	ModelParameters map[string]frozen.ModelParameters `json:"model_parameters,omitempty"`
 }
 
 // Endpoint is the base URL and chat path this provider's requests go to.

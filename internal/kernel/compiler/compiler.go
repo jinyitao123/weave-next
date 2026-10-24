@@ -63,14 +63,19 @@ func lookupFactory(graphType string) (GraphFactory, bool) {
 type CompileOpts struct {
 	// DurableMember retains required checkpoints for the new frozen member
 	// protocol. Legacy graph factories keep their original options.
-	DurableMember   bool
-	Profile         string
-	Effort          contract.EffortLevel
-	WaitBudget      *contract.WaitBudget // bounds each model call's wait for output; nil leaves the context deadline only
-	ToolHooks       []contract.ToolHook  // injected hooks (e.g. SSE tool_result emitter)
-	BeforeStepHooks []loom.StepHook      // injected Before step hooks (e.g. SSE step_start)
-	AfterStepHooks  []loom.StepHook      // injected After step hooks (e.g. SSE step_end)
-	Store           loom.Store           // for audit logging
+	DurableMember bool
+	Profile       string
+	Effort        contract.EffortLevel
+	WaitBudget    *contract.WaitBudget // bounds each model call's wait for output; nil leaves the context deadline only
+	// Temperature, TopP and Thinking are sent on every model call; nil and
+	// empty leave the provider default.
+	Temperature     *float64
+	TopP            *float64
+	Thinking        contract.ThinkingMode
+	ToolHooks       []contract.ToolHook // injected hooks (e.g. SSE tool_result emitter)
+	BeforeStepHooks []loom.StepHook     // injected Before step hooks (e.g. SSE step_start)
+	AfterStepHooks  []loom.StepHook     // injected After step hooks (e.g. SSE step_end)
+	Store           loom.Store          // for audit logging
 	// ExecutionLLMWrapper decorates synchronous graph-execution calls. Standard
 	// compilation applies it outside fallback; custom factories receive the
 	// decorated LLM without gaining fallback behavior.
@@ -254,6 +259,9 @@ func CompileAgent(tenant string, rec *registry.AgentRecord, llm contract.LLM, to
 
 		ProviderDefaultEffort: true,
 		WaitBudget:            opts.WaitBudget,
+		Temperature:           opts.Temperature,
+		TopP:                  opts.TopP,
+		Thinking:              opts.Thinking,
 	}
 	if rec.ToolLoopControl != nil {
 		toolLoopOpts.MaxToolRepeats = rec.MaxToolRepeats

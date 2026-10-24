@@ -66,19 +66,21 @@ type ProviderHead struct {
 	BaseURL             string                 `json:"base_url"`
 	ChatPath            string                 `json:"chat_path,omitempty"`
 	OutputLimitField    string                 `json:"output_limit_field,omitempty"`
-	Protocol            string                 `json:"protocol"`
+	// ModelParameters declares per model ID the request values members may set.
+	ModelParameters map[string]frozen.ModelParameters `json:"model_parameters,omitempty"`
+	Protocol        string                            `json:"protocol"`
 	// APIKey is MaskedKey when a key is stored and empty (omitted) when none
 	// is; APIKeySet (has_api_key) states the same fact explicitly. Secrets are never read.
-	APIKey         string     `json:"api_key,omitempty"`
-	APIKeySet      bool       `json:"has_api_key"`
-	Models         []string   `json:"models"`
-	JSONObjectMode bool       `json:"json_object_mode,omitempty"`
-	LatestRevision int64      `json:"latest_revision"`
-	SourceKind          string                 `json:"source_kind"`
-	SourceProviderID    *string                `json:"source_provider_id,omitempty"`
-	Enabled             bool                   `json:"enabled"`
-	RevokedAt           *time.Time             `json:"revoked_at,omitempty"`
-	DeletedAt           *time.Time             `json:"deleted_at,omitempty"`
+	APIKey           string     `json:"api_key,omitempty"`
+	APIKeySet        bool       `json:"has_api_key"`
+	Models           []string   `json:"models"`
+	JSONObjectMode   bool       `json:"json_object_mode,omitempty"`
+	LatestRevision   int64      `json:"latest_revision"`
+	SourceKind       string     `json:"source_kind"`
+	SourceProviderID *string    `json:"source_provider_id,omitempty"`
+	Enabled          bool       `json:"enabled"`
+	RevokedAt        *time.Time `json:"revoked_at,omitempty"`
+	DeletedAt        *time.Time `json:"deleted_at,omitempty"`
 }
 
 type ProviderRevision struct {
@@ -94,6 +96,9 @@ type ProviderRevision struct {
 	JSONObjectMode bool      `json:"json_object_mode"`
 	ContentHash    string    `json:"content_hash"`
 	CreatedAt      time.Time `json:"created_at"`
+	// ModelParameters is the revision's per-model declaration, frozen into
+	// the binding of each model it names.
+	ModelParameters map[string]frozen.ModelParameters `json:"model_parameters,omitempty"`
 }
 
 type ProviderRevisionResult struct {
@@ -116,6 +121,8 @@ type providerRevisionHashInput struct {
 	ChatPath string `json:"chat_path,omitempty"`
 	// OutputLimitField is omitted while empty for the same reason.
 	OutputLimitField string `json:"output_limit_field,omitempty"`
+	// ModelParameters is omitted while empty for the same reason.
+	ModelParameters map[string]frozen.ModelParameters `json:"model_parameters,omitempty"`
 }
 
 // UpsertOption adjusts one provider upsert.
@@ -190,16 +197,20 @@ func (s *Store) UpsertRevisionTx(ctx context.Context, tx pgx.Tx, workspaceID str
 		return ProviderRevisionResult{}, fmt.Errorf("seal empty provider credential: %w", err)
 	}
 
+	parametersJSON, err := modelParametersJSON(normalized.ModelParameters)
+	if err != nil {
+		return ProviderRevisionResult{}, coded(CodeFrozenManifestMismatch, "encode provider model parameters")
+	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO weave_provider_credentials (
 		  workspace_id, id, name, base_url, api_key_cipher, models,
 		  json_object_mode,credential_scope,credential_user_id,credential_service_id,
-		  protocol, api_key_set, chat_path, output_limit_field
-		) VALUES ($1, $2, $3, $4, $5, $6, $7,$8,$9,$10,$11,false,$12,$13)
+		  protocol, api_key_set, chat_path, output_limit_field, model_parameters
+		) VALUES ($1, $2, $3, $4, $5, $6, $7,$8,$9,$10,$11,false,$12,$13,$14::jsonb)
 		ON CONFLICT (workspace_id, id) DO NOTHING
 	`, workspaceID, normalized.ID, normalized.Name, normalized.BaseURL,
 		initialCipher, normalized.Models, normalized.JSONObjectMode, normalized.CredentialScope, normalized.CredentialUserID, normalized.CredentialServiceID,
-		normalized.Protocol, normalized.ChatPath, normalized.OutputLimitField,
+		normalized.Protocol, normalized.ChatPath, normalized.OutputLimitField, parametersJSON,
 	); err != nil {
 		return ProviderRevisionResult{}, fmt.Errorf("create provider head: %w", err)
 	}
@@ -253,17 +264,18 @@ func (s *Store) UpsertRevisionTx(ctx context.Context, tx pgx.Tx, workspaceID str
 		}
 		nextRevision++
 		revision = ProviderRevision{
-			WorkspaceID:    workspaceID,
-			ProviderID:     normalized.ID,
-			Revision:       nextRevision,
-			Name:           normalized.Name,
-			BaseURL:        normalized.BaseURL,
-			ChatPath:       normalized.ChatPath,
-			OutputLimit:    normalized.OutputLimitField,
-			Protocol:       normalized.Protocol,
-			Models:         append([]string(nil), normalized.Models...),
-			JSONObjectMode: normalized.JSONObjectMode,
-			ContentHash:    contentHash,
+			WorkspaceID:     workspaceID,
+			ProviderID:      normalized.ID,
+			Revision:        nextRevision,
+			Name:            normalized.Name,
+			BaseURL:         normalized.BaseURL,
+			ChatPath:        normalized.ChatPath,
+			OutputLimit:     normalized.OutputLimitField,
+			Protocol:        normalized.Protocol,
+			Models:          append([]string(nil), normalized.Models...),
+			JSONObjectMode:  normalized.JSONObjectMode,
+			ContentHash:     contentHash,
+			ModelParameters: normalized.ModelParameters,
 		}
 		modelsJSON, marshalErr := json.Marshal(revision.Models)
 		if marshalErr != nil {
@@ -275,12 +287,12 @@ func (s *Store) UpsertRevisionTx(ctx context.Context, tx pgx.Tx, workspaceID str
 		err = tx.QueryRow(ctx, `
 			INSERT INTO weave_provider_revisions (
 			  workspace_id, provider_id, revision, name, base_url, models,
-			  json_object_mode, content_hash, protocol, chat_path, output_limit_field
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+			  json_object_mode, content_hash, protocol, chat_path, output_limit_field, model_parameters
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb)
 			RETURNING created_at
 		`, revision.WorkspaceID, revision.ProviderID, revision.Revision,
 			revision.Name, revision.BaseURL, string(modelsJSON), revision.JSONObjectMode,
-			revision.ContentHash, revision.Protocol, revision.ChatPath, revision.OutputLimit,
+			revision.ContentHash, revision.Protocol, revision.ChatPath, revision.OutputLimit, parametersJSON,
 		).Scan(&revision.CreatedAt)
 		if err != nil {
 			return ProviderRevisionResult{}, fmt.Errorf("insert ProviderRevision: %w", err)
@@ -299,11 +311,12 @@ func (s *Store) UpsertRevisionTx(ctx context.Context, tx pgx.Tx, workspaceID str
 		    api_key_set=$10,
 		    chat_path=$11,
 		    output_limit_field=$12,
+		    model_parameters=$13::jsonb,
 		    updated_at=now()
 		WHERE workspace_id=$1 AND id=$2
 	`, workspaceID, normalized.ID, normalized.Name, normalized.BaseURL,
 		ciphertext, normalized.Models, normalized.JSONObjectMode, nextRevision,
-		normalized.Protocol, apiKeySet, normalized.ChatPath, normalized.OutputLimitField,
+		normalized.Protocol, apiKeySet, normalized.ChatPath, normalized.OutputLimitField, parametersJSON,
 	); err != nil {
 		return ProviderRevisionResult{}, fmt.Errorf("update provider head: %w", err)
 	}
@@ -312,6 +325,7 @@ func (s *Store) UpsertRevisionTx(ctx context.Context, tx pgx.Tx, workspaceID str
 	head.BaseURL = normalized.BaseURL
 	head.ChatPath = normalized.ChatPath
 	head.OutputLimitField = normalized.OutputLimitField
+	head.ModelParameters = normalized.ModelParameters
 	head.Protocol = normalized.Protocol
 	head.APIKeySet = apiKeySet
 	head.APIKey = maskedKeyFor(apiKeySet)
@@ -350,7 +364,7 @@ func (s *Store) ListMetadata(
 		SELECT workspace_id, id, name, base_url, models, json_object_mode,
 		       latest_revision, source_kind, source_provider_id, enabled,
 		       revoked_at, deleted_at,credential_scope,credential_user_id,credential_service_id,
-		       protocol, api_key_set, chat_path, output_limit_field
+		       protocol, api_key_set, chat_path, output_limit_field, model_parameters
 		FROM weave_provider_credentials
 		WHERE workspace_id=$1
 		  AND enabled
@@ -366,12 +380,16 @@ func (s *Store) ListMetadata(
 	heads := make([]ProviderHead, 0)
 	for rows.Next() {
 		var head ProviderHead
+		var parameters []byte
 		if err := rows.Scan(
 			&head.WorkspaceID, &head.ID, &head.Name, &head.BaseURL, &head.Models,
 			&head.JSONObjectMode, &head.LatestRevision, &head.SourceKind,
 			&head.SourceProviderID, &head.Enabled, &head.RevokedAt, &head.DeletedAt, &head.CredentialScope, &head.CredentialUserID, &head.CredentialServiceID,
-			&head.Protocol, &head.APIKeySet, &head.ChatPath, &head.OutputLimitField,
+			&head.Protocol, &head.APIKeySet, &head.ChatPath, &head.OutputLimitField, &parameters,
 		); err != nil {
+			return nil, err
+		}
+		if head.ModelParameters, err = decodeModelParameters(parameters); err != nil {
 			return nil, err
 		}
 		if AuthorizeReference(ctx, headReference(head)) != nil {
@@ -564,11 +582,12 @@ func getProviderHeadTx(
 	}
 	var head ProviderHead
 	var ciphertext string
+	var parameters []byte
 	err := querier.QueryRow(ctx, `
 		SELECT workspace_id, id, name, base_url, api_key_cipher, models,
 		       json_object_mode, latest_revision, source_kind, source_provider_id,
 		       enabled, revoked_at, deleted_at,credential_scope,credential_user_id,credential_service_id,
-		       protocol, api_key_set, chat_path, output_limit_field
+		       protocol, api_key_set, chat_path, output_limit_field, model_parameters
 		FROM weave_provider_credentials
 		WHERE workspace_id=$1 AND id=$2`+lock,
 		workspaceID, providerID,
@@ -576,8 +595,11 @@ func getProviderHeadTx(
 		&head.WorkspaceID, &head.ID, &head.Name, &head.BaseURL, &ciphertext,
 		&head.Models, &head.JSONObjectMode, &head.LatestRevision, &head.SourceKind,
 		&head.SourceProviderID, &head.Enabled, &head.RevokedAt, &head.DeletedAt, &head.CredentialScope, &head.CredentialUserID, &head.CredentialServiceID,
-		&head.Protocol, &head.APIKeySet, &head.ChatPath, &head.OutputLimitField,
+		&head.Protocol, &head.APIKeySet, &head.ChatPath, &head.OutputLimitField, &parameters,
 	)
+	if err == nil {
+		head.ModelParameters, err = decodeModelParameters(parameters)
+	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ProviderHead{}, "", coded(
 			CodeCredentialUnavailable,
@@ -645,18 +667,23 @@ func getProviderRevisionTx(
 		}
 	}
 	var stored ProviderRevision
-	var modelsJSON []byte
+	var modelsJSON, parametersJSON []byte
 	err := querier.QueryRow(ctx, `
 		SELECT workspace_id, provider_id, revision, name, base_url, models,
-		       json_object_mode, content_hash, created_at, protocol, chat_path, output_limit_field
+		       json_object_mode, content_hash, created_at, protocol, chat_path, output_limit_field, model_parameters
 		FROM weave_provider_revisions
 		WHERE workspace_id=$1 AND provider_id=$2 AND revision=$3`+lock,
 		workspaceID, providerID, revision,
 	).Scan(
 		&stored.WorkspaceID, &stored.ProviderID, &stored.Revision, &stored.Name,
 		&stored.BaseURL, &modelsJSON, &stored.JSONObjectMode, &stored.ContentHash,
-		&stored.CreatedAt, &stored.Protocol, &stored.ChatPath, &stored.OutputLimit,
+		&stored.CreatedAt, &stored.Protocol, &stored.ChatPath, &stored.OutputLimit, &parametersJSON,
 	)
+	if err == nil {
+		if stored.ModelParameters, err = decodeModelParameters(parametersJSON); err != nil {
+			return ProviderRevision{}, coded(CodeFrozenManifestMismatch, "stored provider model parameters are invalid")
+		}
+	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ProviderRevision{}, coded(
 			missingCode,
@@ -682,6 +709,7 @@ func getProviderRevisionTx(
 		JSONObjectMode: stored.JSONObjectMode,
 	}
 	storedConfig.OutputLimitField = stored.OutputLimit
+	storedConfig.ModelParameters = stored.ModelParameters
 	var normalized llmrouter.ProviderConfig
 	if strings.HasPrefix(providerID, "system/") {
 		normalized, err = normalizeMirroredProviderConfig(workspaceID, storedConfig)
@@ -694,7 +722,8 @@ func getProviderRevisionTx(
 			"stored provider functional configuration is invalid",
 		)
 	}
-	if normalized.Protocol != stored.Protocol || normalized.ChatPath != stored.ChatPath || normalized.BaseURL != stored.BaseURL || normalized.OutputLimitField != stored.OutputLimit {
+	if normalized.Protocol != stored.Protocol || normalized.ChatPath != stored.ChatPath || normalized.BaseURL != stored.BaseURL || normalized.OutputLimitField != stored.OutputLimit ||
+		!sameModelParameters(normalized.ModelParameters, stored.ModelParameters) {
 		return ProviderRevision{}, coded(
 			CodeFrozenManifestMismatch,
 			"stored provider protocol is not normalized",
@@ -799,6 +828,11 @@ func normalizeProviderConfig(
 		)
 	}
 	cfg.Models = models
+	parameters, err := normalizeModelParameters(frozenModelProtocol(cfg.Protocol), cfg.Models, cfg.ModelParameters)
+	if err != nil {
+		return llmrouter.ProviderConfig{}, coded(CodeProviderRevisionRequired, err.Error())
+	}
+	cfg.ModelParameters = parameters
 	return cfg, nil
 }
 
@@ -816,6 +850,7 @@ func hashProviderRevision(cfg llmrouter.ProviderConfig) (string, error) {
 		ChatPath:       cfg.ChatPath,
 	}
 	input.OutputLimitField = cfg.OutputLimitField
+	input.ModelParameters = cfg.ModelParameters
 	raw, err := json.Marshal(input)
 	if err != nil {
 		return "", err

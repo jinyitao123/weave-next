@@ -118,6 +118,9 @@ type ProviderAddRequest struct {
 	ChatPath string `json:"chat_path,omitempty"`
 	// OutputLimitField is max_tokens (default) or max_completion_tokens.
 	OutputLimitField string `json:"output_limit_field,omitempty"`
+	// ModelParameters declares per model ID the request values members may
+	// set: reasoning_efforts, thinking, and temperature/top_p ranges.
+	ModelParameters map[string]json.RawMessage `json:"model_parameters,omitempty"`
 	// Protocol is "openai" (default) or "systemone".
 	Protocol string `json:"protocol,omitempty"`
 	// APIKey is optional: nil keeps the stored key, a value replaces it and

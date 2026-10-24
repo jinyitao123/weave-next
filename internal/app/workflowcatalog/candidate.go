@@ -237,6 +237,13 @@ func (b *CandidateBuilder) buildResolvedCandidateTx(ctx context.Context, tx pgx.
 		if err != nil {
 			return nil, nil, machine.ValidationContext{}, err
 		}
+		// A request setting the member's models do not declare is the
+		// developer's to change, so it is reported rather than failed.
+		if err := frozen.ValidateBundleRequestProfile(bundle); err != nil {
+			report.Add(machine.PhaseAgentVersions, "/agents/"+plan.record.Name, machine.CodeAgentModelParameterUndeclared,
+				fmt.Sprintf("成员“%s”的模型请求设置未被模型声明：%v", plan.record.Name, err))
+			return nil, &report, machine.ValidationContext{}, nil
+		}
 		bundleDependencies := append(
 			[]frozen.FrozenDependencyRef(nil), perAgentManifest.Dependencies...,
 		)

@@ -24,6 +24,34 @@ func TestDevelopmentMemberReasoningEffort(t *testing.T) {
 	if _, err := configure("claude", "low"); err == nil {
 		t.Fatal("a CLI member accepted a reasoning effort it would never send")
 	}
+	sampled := func(engine, thinking, effort string, temperature, topP *float64) (*registry.AgentRecord, error) {
+		record := &registry.AgentRecord{Name: "member"}
+		err := configureDevelopmentMember(record, teamMemberAgentConfiguration{DisplayName: "成员", Engine: engine,
+			ReasoningEffort: effort, Thinking: thinking, Temperature: temperature, TopP: topP}, teamMemberRelationshipDraft{}, false, nil)
+		return record, err
+	}
+	zero, half, tooHigh := 0.0, 0.5, 2.5
+	// An explicit temperature 0 is kept apart from an unset one.
+	if record, err := sampled("loom", "enabled", "", &zero, &half); err != nil || record.RequestProfile == nil ||
+		record.RequestProfile.Thinking != "enabled" || record.RequestProfile.Temperature == nil || *record.RequestProfile.Temperature != 0 ||
+		record.RequestProfile.TopP == nil || *record.RequestProfile.TopP != 0.5 {
+		t.Fatalf("thinking and sampling: %+v %v", record.RequestProfile, err)
+	}
+	for name, tc := range map[string]struct {
+		engine, thinking, effort string
+		temperature, topP        *float64
+	}{
+		"unknown thinking":         {engine: "loom", thinking: "auto"},
+		"effort with thinking off": {engine: "loom", thinking: "disabled", effort: "high"},
+		"temperature above 2":      {engine: "loom", temperature: &tooHigh},
+		"top_p above 1":            {engine: "loom", topP: &tooHigh},
+		"sampling on a CLI member": {engine: "codex", temperature: &half},
+		"thinking on a CLI member": {engine: "claude", thinking: "enabled"},
+	} {
+		if _, err := sampled(tc.engine, tc.thinking, tc.effort, tc.temperature, tc.topP); err == nil {
+			t.Errorf("%s was accepted", name)
+		}
+	}
 	timed := func(engine string, firstChunk, idle int64) (*registry.AgentRecord, error) {
 		record := &registry.AgentRecord{Name: "member"}
 		err := configureDevelopmentMember(record, teamMemberAgentConfiguration{DisplayName: "成员", Engine: engine,

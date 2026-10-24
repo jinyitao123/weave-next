@@ -44,13 +44,19 @@ type teamMemberAgentConfiguration struct {
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`
 	// FirstChunkTimeoutMS and IdleTimeoutMS bound how long each model call
 	// waits for its first output and between outputs; zero is unbounded.
-	FirstChunkTimeoutMS int64           `json:"first_chunk_timeout_ms,omitempty"`
-	IdleTimeoutMS       int64           `json:"idle_timeout_ms,omitempty"`
+	FirstChunkTimeoutMS int64 `json:"first_chunk_timeout_ms,omitempty"`
+	IdleTimeoutMS       int64 `json:"idle_timeout_ms,omitempty"`
 	// CallTimeoutMS bounds each model call from its request to its end.
 	CallTimeoutMS int64 `json:"call_timeout_ms,omitempty"`
-	StepBudget          int64           `json:"step_budget"`
-	MaxCostUSD          float64         `json:"max_cost_usd"`
-	OutputSchema        json.RawMessage `json:"output_schema,omitempty"`
+	// Thinking, Temperature and TopP are sent on every model request of the
+	// member; each must be declared by the model's provider. Unset (empty or
+	// null) leaves the provider default, so an explicit 0 is kept apart.
+	Thinking     string          `json:"thinking,omitempty"`
+	Temperature  *float64        `json:"temperature,omitempty"`
+	TopP         *float64        `json:"top_p,omitempty"`
+	StepBudget   int64           `json:"step_budget"`
+	MaxCostUSD   float64         `json:"max_cost_usd"`
+	OutputSchema json.RawMessage `json:"output_schema,omitempty"`
 }
 
 type teamMemberInlineSkill struct {
@@ -169,6 +175,9 @@ func (s *Server) seedTeamMemberConfigDraft(c echo.Context) (*teamMemberConfigDra
 		configuration.FirstChunkTimeoutMS = record.RequestProfile.FirstChunkTimeoutMS
 		configuration.IdleTimeoutMS = record.RequestProfile.IdleTimeoutMS
 		configuration.CallTimeoutMS = record.RequestProfile.CallTimeoutMS
+		configuration.Thinking = record.RequestProfile.Thinking
+		configuration.Temperature = record.RequestProfile.Temperature
+		configuration.TopP = record.RequestProfile.TopP
 	}
 	relationship := teamMemberRelationshipDraft{Duty: duty, WhenToUse: whenToUse, ContextInstruction: contextInstruction, AllowedKinds: allowedKinds, DefaultKind: defaultKind, ResultRequirement: resultRequirement, Enabled: enabled}
 	return &teamMemberConfigDraftResponse{
@@ -494,15 +503,10 @@ func configureDevelopmentMember(record *registry.AgentRecord, configuration team
 	// A request profile reaches built-in Loom model calls only; a CLI member's
 	// runtime chooses its own, so a setting there would silently do nothing.
 	profile := frozen.FrozenRequestProfile{ReasoningEffort: strings.TrimSpace(configuration.ReasoningEffort),
-		FirstChunkTimeoutMS: configuration.FirstChunkTimeoutMS, IdleTimeoutMS: configuration.IdleTimeoutMS, CallTimeoutMS: configuration.CallTimeoutMS}
+		FirstChunkTimeoutMS: configuration.FirstChunkTimeoutMS, IdleTimeoutMS: configuration.IdleTimeoutMS, CallTimeoutMS: configuration.CallTimeoutMS,
+		Thinking: strings.TrimSpace(configuration.Thinking), Temperature: configuration.Temperature, TopP: configuration.TopP}
 	if err := frozen.ValidateRequestProfile(profile); err != nil {
-		if profile.ReasoningEffort != "" && !slices.Contains(frozen.ReasoningEfforts, profile.ReasoningEffort) {
-			return echo.NewHTTPError(422, "推理档位只能是 "+strings.Join(frozen.ReasoningEfforts, "、")+" 之一，或留空使用供应方默认")
-		}
-		if profile.CallTimeoutMS > 0 && (profile.FirstChunkTimeoutMS >= profile.CallTimeoutMS || profile.IdleTimeoutMS >= profile.CallTimeoutMS) {
-			return echo.NewHTTPError(422, "等待首个输出和输出间隔的上限须短于整次调用上限，否则永远不会生效")
-		}
-		return echo.NewHTTPError(422, "等待时长须在 0 到 3600000 毫秒之间，0 表示不限")
+		return echo.NewHTTPError(422, requestProfileRefusal(profile))
 	}
 	// Every model call of a member step also ends with the step, so a budget
 	// that is not shorter than the step limit would never be the one to end it.
@@ -512,7 +516,7 @@ func configureDevelopmentMember(record *registry.AgentRecord, configuration team
 		}
 	}
 	if profile != (frozen.FrozenRequestProfile{}) && engine.IsCLIEngine(record.Engine) {
-		return echo.NewHTTPError(422, "命令行引擎成员不使用推理档位和等待时长，请留空")
+		return echo.NewHTTPError(422, "命令行引擎成员不使用推理档位、思考开关、采样参数和等待时长，请留空")
 	}
 	record.RequestProfile = nil
 	if profile != (frozen.FrozenRequestProfile{}) {
@@ -525,4 +529,25 @@ func configureDevelopmentMember(record *registry.AgentRecord, configuration team
 		record.OutputSchema = &raw
 	}
 	return nil
+}
+
+// requestProfileRefusal names, for the developer, the first setting
+// frozen.ValidateRequestProfile refuses.
+func requestProfileRefusal(profile frozen.FrozenRequestProfile) string {
+	switch {
+	case profile.ReasoningEffort != "" && !slices.Contains(frozen.ReasoningEfforts, profile.ReasoningEffort):
+		return "推理档位只能是 " + strings.Join(frozen.ReasoningEfforts, "、") + " 之一，或留空使用供应方默认"
+	case profile.Thinking != "" && !slices.Contains(frozen.ThinkingModes, profile.Thinking):
+		return "思考开关只能是 enabled 或 disabled，或留空使用供应方默认"
+	case profile.Thinking == "disabled" && profile.ReasoningEffort != "" && profile.ReasoningEffort != "none":
+		return "关闭思考时不能再要求推理档位，请把推理档位留空或设为 none"
+	case profile.Temperature != nil && (*profile.Temperature < 0 || *profile.Temperature > frozen.MaxTemperature):
+		return "temperature 须在 0 到 2 之间，或留空使用供应方默认"
+	case profile.TopP != nil && (*profile.TopP < 0 || *profile.TopP > frozen.MaxTopP):
+		return "top_p 须在 0 到 1 之间，或留空使用供应方默认"
+	case profile.CallTimeoutMS > 0 && (profile.FirstChunkTimeoutMS >= profile.CallTimeoutMS || profile.IdleTimeoutMS >= profile.CallTimeoutMS):
+		return "等待首个输出和输出间隔的上限须短于整次调用上限，否则永远不会生效"
+	default:
+		return "等待时长须在 0 到 3600000 毫秒之间，0 表示不限"
+	}
 }

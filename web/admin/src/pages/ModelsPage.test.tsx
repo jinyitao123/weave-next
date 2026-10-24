@@ -74,6 +74,21 @@ describe('models page', () => {
     expect(saved(calls)[0].body).toMatchObject({ output_limit_field: 'max_completion_tokens' })
   })
 
+  it('declares per-model request parameters, sent only once edited', async () => {
+    const calls = serve()
+    render(<ModelsPage session={admin} />)
+    await open(/^deepseek/)
+    const editor = screen.getByLabelText('模型参数声明（JSON）')
+    fireEvent.change(editor, { target: { value: '{"deepseek-chat": [1]}' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    expect(await screen.findByText('模型参数声明须是以模型名为键、每项为对象的 JSON')).toBeTruthy()
+    expect(saved(calls)).toHaveLength(0)
+    fireEvent.change(editor, { target: { value: '{"deepseek-chat": {"reasoning_efforts": ["low"], "temperature": {"min": 0, "max": 1}}}' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(saved(calls)).toHaveLength(1))
+    expect(saved(calls)[0].body).toMatchObject({ model_parameters: { 'deepseek-chat': { reasoning_efforts: ['low'], temperature: { min: 0, max: 1 } } } })
+  })
+
   it('checks a saved provider and says what to check next', async () => {
     const calls = serve()
     render(<ModelsPage session={admin} />)

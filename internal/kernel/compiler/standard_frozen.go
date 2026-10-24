@@ -362,6 +362,8 @@ func mapStandardFrozenToLegacy(
 		copied := *profile
 		record.RequestProfile = &copied
 		compileOpts.Effort = contract.EffortLevel(profile.ReasoningEffort)
+		compileOpts.Temperature, compileOpts.TopP = profile.Temperature, profile.TopP
+		compileOpts.Thinking = contract.ThinkingMode(profile.Thinking)
 		if profile.FirstChunkTimeoutMS > 0 || profile.IdleTimeoutMS > 0 || profile.CallTimeoutMS > 0 {
 			compileOpts.WaitBudget = &contract.WaitBudget{FirstChunkMS: profile.FirstChunkTimeoutMS, IdleMS: profile.IdleTimeoutMS, TotalMS: profile.CallTimeoutMS}
 		}

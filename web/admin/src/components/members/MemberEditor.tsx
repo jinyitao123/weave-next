@@ -14,6 +14,12 @@ const reasoningEfforts = [
   { value: '', label: '供应方默认' },
   ...['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].map((value) => ({ value, label: value })),
 ]
+// Mirrors frozen.ThinkingModes; unset sends no thinking switch.
+const thinkingModes = [
+  { value: '', label: '供应方默认' },
+  { value: 'enabled', label: '开启（enabled）' },
+  { value: 'disabled', label: '关闭（disabled）' },
+]
 const limits = [
   ['max_tokens', '累计 token 上限'],
   ['max_output_tokens', '单次回复 token 上限'],
@@ -306,6 +312,23 @@ function AbilityPanel({ part, member, cli, catalog, onConfig, onCatalog }: { par
   </>
 }
 
+// SamplingInput keeps what is being typed ("0." on the way to "0.5") and
+// reports a number, or null for empty: unset, the provider default.
+function SamplingInput({ label, member, value, onChange }: { label: string; member: string; value: number | null | undefined; onChange: (value: number | null) => void }) {
+  const [text, setText] = useState(value == null ? '' : String(value))
+  useEffect(() => {
+    setText((current) => (current.trim() === '' ? null : Number(current)) === (value ?? null) ? current : value == null ? '' : String(value))
+  }, [value])
+  return <label className="field"><span>{label}</span>
+    <input className="input" inputMode="decimal" aria-label={`${member}的${label}`} value={text} placeholder="供应方默认"
+      onChange={(event) => {
+        const next = event.target.value
+        setText(next)
+        if (next.trim() === '') onChange(null)
+        else if (Number.isFinite(Number(next))) onChange(Number(next))
+      }} /></label>
+}
+
 function RunPanel({ member, nodes, accepting, models, kindsInUse, onConfig, onRelationship }: DetailProps & { nodes: RuntimeNode[]; accepting: Record<string, number>; models: string[]; kindsInUse: string[] }) {
   const config = member.configuration, relation = member.relationship
   const lead = config.role === 'avatar', cli = isCLIEngine(config.engine)
@@ -333,14 +356,17 @@ function RunPanel({ member, nodes, accepting, models, kindsInUse, onConfig, onRe
     <section className="members__section" aria-label="引擎与模型">
       <h3>引擎与模型</h3>
       <div className="members__grid">
-        <div className="field"><span>引擎</span><Select label={`${name}的引擎`} value={config.engine} disabled={lead} options={engineOptions} onChange={(engine) => onConfig({ engine, runtime_id: '', ...(isCLIEngine(engine) ? { reasoning_effort: '', first_chunk_timeout_ms: 0, idle_timeout_ms: 0, call_timeout_ms: 0 } : {}) })} /></div>
+        <div className="field"><span>引擎</span><Select label={`${name}的引擎`} value={config.engine} disabled={lead} options={engineOptions} onChange={(engine) => onConfig({ engine, runtime_id: '', ...(isCLIEngine(engine) ? { reasoning_effort: '', thinking: '', temperature: null, top_p: null, first_chunk_timeout_ms: 0, idle_timeout_ms: 0, call_timeout_ms: 0 } : {}) })} /></div>
         {cli ? <div className="field"><span>节点</span><Select label={`${name}的节点`} value={config.runtime_id ?? ''} placeholder={engineNodes.length ? '选择节点' : '没有提供该引擎的节点'} options={engineNodes} onChange={(runtime) => onConfig({ runtime_id: runtime })} /></div> : null}
         {cli
           ? <label className="field"><span>模型</span><input className="input" value={config.model ?? ''} placeholder="留空使用节点上的默认模型" onChange={(event) => onConfig({ model: event.target.value })} /></label>
           : <div className="field"><span>模型</span><Select label={`${name}的模型`} value={config.model ?? ''} placeholder={modelOptions.length ? '选择模型' : '还没有可用模型'} options={modelOptions} onChange={(model) => onConfig({ model })} /></div>}
         {cli ? null : <div className="field"><span>推理档位</span><Select label={`${name}的推理档位`} value={config.reasoning_effort ?? ''} options={reasoningEfforts} onChange={(reasoning_effort) => onConfig({ reasoning_effort })} /></div>}
+        {cli ? null : <div className="field"><span>思考开关</span><Select label={`${name}的思考开关`} value={config.thinking ?? ''} options={thinkingModes} onChange={(thinking) => onConfig({ thinking })} /></div>}
+        {cli ? null : <SamplingInput label="temperature" member={name} value={config.temperature} onChange={(temperature) => onConfig({ temperature })} />}
+        {cli ? null : <SamplingInput label="top_p" member={name} value={config.top_p} onChange={(top_p) => onConfig({ top_p })} />}
       </div>
-      {cli ? null : <p className="muted small">推理档位随发布冻结，作为 reasoning_effort 发给模型；供应方是否真正采用由供应方决定。</p>}
+      {cli ? null : <p className="muted small">推理档位、思考开关和采样参数随发布冻结，原样发给模型；留空使用供应方默认。思考开关与采样参数须由模型的供应方声明允许的取值，未声明或超出范围的设置在发布时拒绝。供应方是否真正采用由供应方决定。</p>}
       {cli ? null : <p className="muted small">没有合适的模型？<a className="link-button" href="/admin/deployment/models" target="_blank" rel="noreferrer">去配置模型</a>，回到这里后列表会更新。</p>}
     </section>
 
