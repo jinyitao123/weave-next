@@ -1,0 +1,2797 @@
+{
+ "baseline_source": "main c7badbc3 plus the database_pool observation of e6cba730 (internal/app/api/admin_task_queue.go only)",
+ "candidate_source": "perf/attempt-authorization e9613e02 plus the locked read-only reads ending in rollback and the two single-statement reads (this commit)",
+ "order": "base-1, after2-1, base-2, after2-2, one after another on the same machine, nothing compiled meanwhile",
+ "options": {
+  "concurrency": 256,
+  "lanes": [
+   10,
+   20,
+   50,
+   100
+  ],
+  "pool_max_conns": 48,
+  "model_latency": "fixed:2s",
+  "decide_warmup": "10s",
+  "decide_duration": "60s",
+  "min_success": 0.99,
+  "p95_target": "30s",
+  "weave_env": [
+   "WEAVE_TEAMRUN_EXECUTOR=pooled",
+   "WEAVE_TEAMRUN_OBSERVATION_WRITES=buffered"
+  ]
+ },
+ "host": {
+  "cpus": 6,
+  "memory": "8 GB",
+  "os": "Windows 11",
+  "postgres": "PostgreSQL 18.1, pg_stat_statements, synchronous_commit=on"
+ },
+ "cases": [
+  {
+   "case": "after2-1",
+   "report_sha256": "e8244004b6198cf957193eef9220e1453276a4334e6b336a3a96c7613d402dee",
+   "steps": [
+    {
+     "lanes": 10,
+     "outcomes": {
+      "submitted": 131,
+      "completed": 131,
+      "failed": 0,
+      "cancelled": 0,
+      "unsettled": 0,
+      "rejected": 0
+     },
+     "success_rate": 1,
+     "completed_per_second": 2.1266664278090173,
+     "measured_seconds": 61.598753,
+     "all_p50_ms": 4389.5749,
+     "all_p95_ms": 4452.5811,
+     "platform_p50_ms": 195.87510000000043,
+     "platform_p95_ms": 266.58130000000017,
+     "model_p50_ms": 4010.3977999999997,
+     "queue_p50_ms": 128.327,
+     "queue_p95_ms": 164.875,
+     "backlog_at_window_end": {
+      "queued": 0,
+      "running": 10
+     },
+     "locks": {
+      "every": "500ms",
+      "samples": 143,
+      "active_mean": 0.38461538461538464,
+      "active_max": 7,
+      "wait_samples": 19,
+      "waits": [
+       {
+        "wait": "Client:ClientRead",
+        "samples": 8,
+        "approx_backend_seconds": 4
+       },
+       {
+        "wait": "IO:WalWrite",
+        "samples": 7,
+        "approx_backend_seconds": 3.5
+       },
+       {
+        "wait": "LWLock:WALWrite",
+        "samples": 2,
+        "approx_backend_seconds": 1
+       },
+       {
+        "wait": "Lock:transactionid",
+        "object": "transactionid (row of weave_team_runs)",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       },
+       {
+        "wait": "Lock:transactionid",
+        "object": "transactionid (row of weave_fanout_group)",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       }
+      ]
+     },
+     "notifications": {
+      "channels": {
+       "weave_task_ready": 480
+      },
+      "notifying_commits": 480,
+      "share_of_commits": 0.021116536887950375,
+      "commit_lock_wait_samples": 0,
+      "commit_lock_wait_seconds": 0
+     },
+     "connection_pool": {
+      "max_conns": 48,
+      "acquires": 24694,
+      "empty_acquires": 14,
+      "empty_acquire_share": 0.0005669393374908885,
+      "canceled_acquires": 0,
+      "acquire_ms": 1564.9867999999997,
+      "acquire_mean_ms": 0.06337518425528467,
+      "empty_acquire_wait_seconds": 1.5538975
+     },
+     "per_completed_workflow": {
+      "statements": 493.80625,
+      "xacts": 159.1,
+      "rollbacks": 17.03125,
+      "top_statements": [
+       {
+        "calls": 10788,
+        "per_workflow": 67.425,
+        "exec_ms": 5.139300000000179,
+        "query": "begin"
+       },
+       {
+        "calls": 8047,
+        "per_workflow": 50.29375,
+        "exec_ms": 4.427900000000083,
+        "query": "commit"
+       },
+       {
+        "calls": 3684,
+        "per_workflow": 23.025,
+        "exec_ms": 90.17159999999997,
+        "query": "SELECT value FROM loom_store WHERE namespace=$1 AND key=$2"
+       },
+       {
+        "calls": 2741,
+        "per_workflow": 17.13125,
+        "exec_ms": 3.4696000000000247,
+        "query": "rollback"
+       },
+       {
+        "calls": 2078,
+        "per_workflow": 12.9875,
+        "exec_ms": 191.41700000000031,
+        "query": "SELECT id, workspace_id, COALESCE(project_id, $4), COALESCE(agent, $5), COALESCE(agent_id, $6), COALESCE(agent_version, $7), identity_kind, identity_schema_version, COALESCE(execution_scope, $8), COAL"
+       },
+       {
+        "calls": 1926,
+        "per_workflow": 12.0375,
+        "exec_ms": 2694.382099999997,
+        "query": "SELECT workspace_id,project_id,run_id,status, team_run_generation,execution_lease_epoch,resume_generation, team_id,workflow_id,workflow_version,run_snapshot_id, source_kind,source_task_id,establish_id"
+       },
+       {
+        "calls": 1922,
+        "per_workflow": 12.0125,
+        "exec_ms": 480.67210000000017,
+        "query": "SELECT workspace_id, workflow_id, workflow_version, artifact_schema_version, canonicalization_algorithm, canonicalization_version, hash_algorithm, content_hash, payload, created_at FROM weave_publishe"
+       },
+       {
+        "calls": 1600,
+        "per_workflow": 10,
+        "exec_ms": 642.6662999999998,
+        "query": "INSERT INTO weave_team_run_activity_events ( workspace_id,run_id,event_id,kind,node_id,member_id,member_version,detail,occurred_at ) VALUES ($1,$2,$3,$4,NULLIF($5,$10),NULLIF($6,$11),NULLIF($7,$12),$8"
+       },
+       {
+        "calls": 1600,
+        "per_workflow": 10,
+        "exec_ms": 46.35509999999995,
+        "query": "SELECT workspace_id,run_id,schema_version,attempt_generation,attempt_id,agent,attribution_scope,team_id,workflow_id,workflow_version,run_snapshot_id,conversation_id,parent_run_id,parent_seq,aggregatio"
+       },
+       {
+        "calls": 1582,
+        "per_workflow": 9.8875,
+        "exec_ms": 253.87510000000034,
+        "query": "SELECT i.invocation_id,i.created_at,r.terminal_at FROM weave_capability_workflow_invocations i JOIN weave_team_runs r ON r.workspace_id=i.workspace_id AND r.run_id=i.run_id WHERE i.invocation_id=ANY($"
+       }
+      ]
+     }
+    },
+    {
+     "lanes": 20,
+     "outcomes": {
+      "submitted": 280,
+      "completed": 280,
+      "failed": 0,
+      "cancelled": 0,
+      "unsettled": 0,
+      "rejected": 0
+     },
+     "success_rate": 1,
+     "completed_per_second": 4.418382977145679,
+     "measured_seconds": 63.3716003,
+     "all_p50_ms": 4391.4696,
+     "all_p95_ms": 4542.4782,
+     "platform_p50_ms": 188.25790000000032,
+     "platform_p95_ms": 331.8194000000002,
+     "model_p50_ms": 4011.9115,
+     "queue_p50_ms": 131.331,
+     "queue_p95_ms": 170.709,
+     "backlog_at_window_end": {
+      "queued": 0,
+      "running": 53
+     },
+     "locks": {
+      "every": "500ms",
+      "samples": 146,
+      "active_mean": 0.6506849315068494,
+      "active_max": 6,
+      "wait_samples": 51,
+      "waits": [
+       {
+        "wait": "IO:WalWrite",
+        "samples": 19,
+        "approx_backend_seconds": 9.5
+       },
+       {
+        "wait": "Client:ClientRead",
+        "samples": 12,
+        "approx_backend_seconds": 6
+       },
+       {
+        "wait": "LWLock:WALWrite",
+        "samples": 12,
+        "approx_backend_seconds": 6
+       },
+       {
+        "wait": "Lock:transactionid",
+        "object": "transactionid (row of weave_fanout_group)",
+        "samples": 5,
+        "approx_backend_seconds": 2.5
+       },
+       {
+        "wait": "Lock:tuple",
+        "object": "tuple:weave_team_runs",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       },
+       {
+        "wait": "Lock:tuple",
+        "object": "tuple:weave_fanout_group",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       },
+       {
+        "wait": "Lock:transactionid",
+        "object": "transactionid (row of weave_team_runs)",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       }
+      ]
+     },
+     "notifications": {
+      "channels": {
+       "weave_task_ready": 960
+      },
+      "notifying_commits": 960,
+      "share_of_commits": 0.021759332713796778,
+      "commit_lock_wait_samples": 0,
+      "commit_lock_wait_seconds": 0
+     },
+     "connection_pool": {
+      "max_conns": 48,
+      "acquires": 48784,
+      "empty_acquires": 147,
+      "empty_acquire_share": 0.0030132830436208594,
+      "canceled_acquires": 0,
+      "acquire_ms": 12324.513599999998,
+      "acquire_mean_ms": 0.25263433912758276,
+      "empty_acquire_wait_seconds": 12.2529048
+     },
+     "per_completed_workflow": {
+      "statements": 484.0625,
+      "xacts": 154.890625,
+      "rollbacks": 17.01875,
+      "top_statements": [
+       {
+        "calls": 21330,
+        "per_workflow": 66.65625,
+        "exec_ms": 10.212600000003988,
+        "query": "begin"
+       },
+       {
+        "calls": 15849,
+        "per_workflow": 49.528125,
+        "exec_ms": 8.882800000004341,
+        "query": "commit"
+       },
+       {
+        "calls": 7370,
+        "per_workflow": 23.03125,
+        "exec_ms": 196.39449999999846,
+        "query": "SELECT value FROM loom_store WHERE namespace=$1 AND key=$2"
+       },
+       {
+        "calls": 5481,
+        "per_workflow": 17.128125,
+        "exec_ms": 2.648199999999972,
+        "query": "rollback"
+       },
+       {
+        "calls": 4151,
+        "per_workflow": 12.971875,
+        "exec_ms": 244.5930999999992,
+        "query": "SELECT id, workspace_id, COALESCE(project_id, $4), COALESCE(agent, $5), COALESCE(agent_id, $6), COALESCE(agent_version, $7), identity_kind, identity_schema_version, COALESCE(execution_scope, $8), COAL"
+       },
+       {
+        "calls": 3851,
+        "per_workflow": 12.034375,
+        "exec_ms": 5530.576000000039,
+        "query": "SELECT workspace_id,project_id,run_id,status, team_run_generation,execution_lease_epoch,resume_generation, team_id,workflow_id,workflow_version,run_snapshot_id, source_kind,source_task_id,establish_id"
+       },
+       {
+        "calls": 3840,
+        "per_workflow": 12,
+        "exec_ms": 913.7388000000001,
+        "query": "SELECT workspace_id, workflow_id, workflow_version, artifact_schema_version, canonicalization_algorithm, canonicalization_version, hash_algorithm, content_hash, payload, created_at FROM weave_publishe"
+       },
+       {
+        "calls": 3202,
+        "per_workflow": 10.00625,
+        "exec_ms": 106.29420000000013,
+        "query": "SELECT workspace_id,run_id,schema_version,attempt_generation,attempt_id,agent,attribution_scope,team_id,workflow_id,workflow_version,run_snapshot_id,conversation_id,parent_run_id,parent_seq,aggregatio"
+       },
+       {
+        "calls": 3200,
+        "per_workflow": 10,
+        "exec_ms": 1339.081999999998,
+        "query": "INSERT INTO weave_team_run_activity_events ( workspace_id,run_id,event_id,kind,node_id,member_id,member_version,detail,occurred_at ) VALUES ($1,$2,$3,$4,NULLIF($5,$10),NULLIF($6,$11),NULLIF($7,$12),$8"
+       },
+       {
+        "calls": 2560,
+        "per_workflow": 8,
+        "exec_ms": 11.35499999999996,
+        "query": "SELECT pg_advisory_xact_lock(hashtextextended($1, $3) # hashtextextended($2, $4))"
+       }
+      ]
+     }
+    },
+    {
+     "lanes": 50,
+     "outcomes": {
+      "submitted": 655,
+      "completed": 655,
+      "failed": 0,
+      "cancelled": 0,
+      "unsettled": 0,
+      "rejected": 0
+     },
+     "success_rate": 1,
+     "completed_per_second": 10.182727236913186,
+     "measured_seconds": 64.3246141,
+     "all_p50_ms": 4499.5747,
+     "all_p95_ms": 4951.7591,
+     "platform_p50_ms": 266.31630000000007,
+     "platform_p95_ms": 645.5709999999995,
+     "model_p50_ms": 4027.9841,
+     "queue_p50_ms": 129.132,
+     "queue_p95_ms": 213.56199999999998,
+     "backlog_at_window_end": {
+      "queued": 0,
+      "running": 61
+     },
+     "locks": {
+      "every": "500ms",
+      "samples": 148,
+      "active_mean": 1.2972972972972974,
+      "active_max": 23,
+      "wait_samples": 134,
+      "waits": [
+       {
+        "wait": "IO:WalWrite",
+        "samples": 29,
+        "approx_backend_seconds": 14.5
+       },
+       {
+        "wait": "LWLock:WALWrite",
+        "samples": 28,
+        "approx_backend_seconds": 14
+       },
+       {
+        "wait": "Client:ClientRead",
+        "samples": 26,
+        "approx_backend_seconds": 13
+       },
+       {
+        "wait": "Lock:transactionid",
+        "object": "transactionid (row of weave_team_runs)",
+        "samples": 22,
+        "approx_backend_seconds": 11
+       },
+       {
+        "wait": "Lock:tuple",
+        "object": "tuple:weave_team_runs",
+        "samples": 16,
+        "approx_backend_seconds": 8
+       },
+       {
+        "wait": "Lock:transactionid",
+        "object": "transactionid (row of weave_fanout_group)",
+        "samples": 8,
+        "approx_backend_seconds": 4
+       },
+       {
+        "wait": "Lock:object",
+        "object": "notify commit (pg_database 0)",
+        "samples": 2,
+        "approx_backend_seconds": 1
+       },
+       {
+        "wait": "Lock:transactionid",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       },
+       {
+        "wait": "Lock:extend",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       },
+       {
+        "wait": "Lock:tuple",
+        "object": "tuple:weave_fanout_group",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       }
+      ]
+     },
+     "notifications": {
+      "channels": {
+       "weave_task_ready": 2265
+      },
+      "notifying_commits": 2265,
+      "share_of_commits": 0.02252453832154897,
+      "commit_lock_wait_samples": 2,
+      "commit_lock_wait_seconds": 1
+     },
+     "connection_pool": {
+      "max_conns": 48,
+      "acquires": 113125,
+      "empty_acquires": 2897,
+      "empty_acquire_share": 0.025608839779005525,
+      "canceled_acquires": 0,
+      "acquire_ms": 27418.301099999997,
+      "acquire_mean_ms": 0.2423717224309392,
+      "empty_acquire_wait_seconds": 27.2476708
+     },
+     "per_completed_workflow": {
+      "statements": 475.882119205298,
+      "xacts": 150.00132450331125,
+      "rollbacks": 16.813245033112583,
+      "top_statements": [
+       {
+        "calls": 49464,
+        "per_workflow": 65.51523178807948,
+        "exec_ms": 23.14099999997959,
+        "query": "begin"
+       },
+       {
+        "calls": 36744,
+        "per_workflow": 48.66754966887417,
+        "exec_ms": 20.377499999975797,
+        "query": "commit"
+       },
+       {
+        "calls": 17371,
+        "per_workflow": 23.00794701986755,
+        "exec_ms": 481.1083999999965,
+        "query": "SELECT value FROM loom_store WHERE namespace=$1 AND key=$2"
+       },
+       {
+        "calls": 12720,
+        "per_workflow": 16.8476821192053,
+        "exec_ms": 6.306400000004306,
+        "query": "rollback"
+       },
+       {
+        "calls": 9760,
+        "per_workflow": 12.927152317880795,
+        "exec_ms": 535.8757999999926,
+        "query": "SELECT id, workspace_id, COALESCE(project_id, $4), COALESCE(agent, $5), COALESCE(agent_id, $6), COALESCE(agent_version, $7), identity_kind, identity_schema_version, COALESCE(execution_scope, $8), COAL"
+       },
+       {
+        "calls": 9068,
+        "per_workflow": 12.010596026490067,
+        "exec_ms": 16593.61399999981,
+        "query": "SELECT workspace_id,project_id,run_id,status, team_run_generation,execution_lease_epoch,resume_generation, team_id,workflow_id,workflow_version,run_snapshot_id, source_kind,source_task_id,establish_id"
+       },
+       {
+        "calls": 9060,
+        "per_workflow": 12,
+        "exec_ms": 2016.0403000000204,
+        "query": "SELECT workspace_id, workflow_id, workflow_version, artifact_schema_version, canonicalization_algorithm, canonicalization_version, hash_algorithm, content_hash, payload, created_at FROM weave_publishe"
+       },
+       {
+        "calls": 7551,
+        "per_workflow": 10.001324503311258,
+        "exec_ms": 246.48789999999937,
+        "query": "SELECT workspace_id,run_id,schema_version,attempt_generation,attempt_id,agent,attribution_scope,team_id,workflow_id,workflow_version,run_snapshot_id,conversation_id,parent_run_id,parent_seq,aggregatio"
+       },
+       {
+        "calls": 7550,
+        "per_workflow": 10,
+        "exec_ms": 2361.5572999999968,
+        "query": "INSERT INTO weave_team_run_activity_events ( workspace_id,run_id,event_id,kind,node_id,member_id,member_version,detail,occurred_at ) VALUES ($1,$2,$3,$4,NULLIF($5,$10),NULLIF($6,$11),NULLIF($7,$12),$8"
+       },
+       {
+        "calls": 6040,
+        "per_workflow": 8,
+        "exec_ms": 214.14929999999924,
+        "query": "SELECT run_id, workspace_id, project_id, team_id, snapshot_schema_version, COALESCE(mode, $4), COALESCE(workflow_id, $5), COALESCE(workflow_version, $6), COALESCE(lead_avatar_id, $7), COALESCE(lead_av"
+       }
+      ]
+     }
+    },
+    {
+     "lanes": 100,
+     "outcomes": {
+      "submitted": 769,
+      "completed": 769,
+      "failed": 0,
+      "cancelled": 0,
+      "unsettled": 0,
+      "rejected": 0
+     },
+     "success_rate": 1,
+     "completed_per_second": 11.8847724850325,
+     "measured_seconds": 64.70464630000001,
+     "all_p50_ms": 6579.4991,
+     "all_p95_ms": 13885.6803,
+     "platform_p50_ms": 1032.4276000000007,
+     "platform_p95_ms": 7332.4834,
+     "model_p50_ms": 4116.8263,
+     "queue_p50_ms": 419.06999999999994,
+     "queue_p95_ms": 4072.854,
+     "backlog_at_window_end": {
+      "queued": 0,
+      "running": 198
+     },
+     "locks": {
+      "every": "500ms",
+      "samples": 148,
+      "active_mean": 1.8175675675675675,
+      "active_max": 23,
+      "wait_samples": 168,
+      "waits": [
+       {
+        "wait": "Lock:transactionid",
+        "object": "transactionid (row of weave_team_runs)",
+        "samples": 44,
+        "approx_backend_seconds": 22
+       },
+       {
+        "wait": "Client:ClientRead",
+        "samples": 43,
+        "approx_backend_seconds": 21.5
+       },
+       {
+        "wait": "LWLock:WALWrite",
+        "samples": 29,
+        "approx_backend_seconds": 14.5
+       },
+       {
+        "wait": "IO:WalWrite",
+        "samples": 24,
+        "approx_backend_seconds": 12
+       },
+       {
+        "wait": "Lock:tuple",
+        "object": "tuple:weave_team_runs",
+        "samples": 12,
+        "approx_backend_seconds": 6
+       },
+       {
+        "wait": "Lock:transactionid",
+        "object": "transactionid (row of weave_fanout_group)",
+        "samples": 11,
+        "approx_backend_seconds": 5.5
+       },
+       {
+        "wait": "Lock:tuple",
+        "object": "tuple:weave_fanout_group",
+        "samples": 2,
+        "approx_backend_seconds": 1
+       },
+       {
+        "wait": "IO:DataFileRead",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       },
+       {
+        "wait": "Lock:tuple",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       },
+       {
+        "wait": "IO:AioIoCompletion",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       }
+      ]
+     },
+     "notifications": {
+      "channels": {
+       "weave_task_ready": 2862
+      },
+      "notifying_commits": 2862,
+      "share_of_commits": 0.022789164397305432,
+      "commit_lock_wait_samples": 0,
+      "commit_lock_wait_seconds": 0
+     },
+     "connection_pool": {
+      "max_conns": 48,
+      "acquires": 141585,
+      "empty_acquires": 37423,
+      "empty_acquire_share": 0.2643147226047957,
+      "canceled_acquires": 0,
+      "acquire_ms": 908066.5988,
+      "acquire_mean_ms": 6.4135791136066675,
+      "empty_acquire_wait_seconds": 907.6055345
+     },
+     "per_completed_workflow": {
+      "statements": 472.3637316561845,
+      "xacts": 148.13941299790358,
+      "rollbacks": 16.4979035639413,
+      "top_statements": [
+       {
+        "calls": 61924,
+        "per_workflow": 64.90985324947589,
+        "exec_ms": 29.678100000032664,
+        "query": "begin"
+       },
+       {
+        "calls": 46082,
+        "per_workflow": 48.303983228511534,
+        "exec_ms": 27.37640000002606,
+        "query": "commit"
+       },
+       {
+        "calls": 21996,
+        "per_workflow": 23.056603773584907,
+        "exec_ms": 659.0872000000226,
+        "query": "SELECT value FROM loom_store WHERE namespace=$1 AND key=$2"
+       },
+       {
+        "calls": 15842,
+        "per_workflow": 16.60587002096436,
+        "exec_ms": 8.66459999999352,
+        "query": "rollback"
+       },
+       {
+        "calls": 12211,
+        "per_workflow": 12.79979035639413,
+        "exec_ms": 721.808900000003,
+        "query": "SELECT id, workspace_id, COALESCE(project_id, $4), COALESCE(agent, $5), COALESCE(agent_id, $6), COALESCE(agent_version, $7), identity_kind, identity_schema_version, COALESCE(execution_scope, $8), COAL"
+       },
+       {
+        "calls": 11510,
+        "per_workflow": 12.064989517819706,
+        "exec_ms": 27984.90220000018,
+        "query": "SELECT workspace_id,project_id,run_id,status, team_run_generation,execution_lease_epoch,resume_generation, team_id,workflow_id,workflow_version,run_snapshot_id, source_kind,source_task_id,establish_id"
+       },
+       {
+        "calls": 11448,
+        "per_workflow": 12,
+        "exec_ms": 2653.5444999999136,
+        "query": "SELECT workspace_id, workflow_id, workflow_version, artifact_schema_version, canonicalization_algorithm, canonicalization_version, hash_algorithm, content_hash, payload, created_at FROM weave_publishe"
+       },
+       {
+        "calls": 9552,
+        "per_workflow": 10.0125786163522,
+        "exec_ms": 356.2687999999922,
+        "query": "SELECT workspace_id,run_id,schema_version,attempt_generation,attempt_id,agent,attribution_scope,team_id,workflow_id,workflow_version,run_snapshot_id,conversation_id,parent_run_id,parent_seq,aggregatio"
+       },
+       {
+        "calls": 9540,
+        "per_workflow": 10,
+        "exec_ms": 2913.963900000009,
+        "query": "INSERT INTO weave_team_run_activity_events ( workspace_id,run_id,event_id,kind,node_id,member_id,member_version,detail,occurred_at ) VALUES ($1,$2,$3,$4,NULLIF($5,$10),NULLIF($6,$11),NULLIF($7,$12),$8"
+       },
+       {
+        "calls": 7632,
+        "per_workflow": 8,
+        "exec_ms": 39.96770000000014,
+        "query": "SELECT pg_advisory_xact_lock(hashtextextended($1, $3) # hashtextextended($2, $4))"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "case": "after2-2",
+   "report_sha256": "3faab0c9d49e8b03df7e08f3658d1a04fea074bab9e53e7f618d12f59a477284",
+   "steps": [
+    {
+     "lanes": 10,
+     "outcomes": {
+      "submitted": 139,
+      "completed": 139,
+      "failed": 0,
+      "cancelled": 0,
+      "unsettled": 0,
+      "rejected": 0
+     },
+     "success_rate": 1,
+     "completed_per_second": 2.234033555846183,
+     "measured_seconds": 62.2192982,
+     "all_p50_ms": 4398.1525,
+     "all_p95_ms": 4539.7797,
+     "platform_p50_ms": 193.25380000000013,
+     "platform_p95_ms": 342.5254999999994,
+     "model_p50_ms": 4010.0059,
+     "queue_p50_ms": 134.64300000000003,
+     "queue_p95_ms": 181.028,
+     "backlog_at_window_end": {
+      "queued": 0,
+      "running": 10
+     },
+     "locks": {
+      "every": "500ms",
+      "samples": 144,
+      "active_mean": 0.3819444444444444,
+      "active_max": 5,
+      "wait_samples": 24,
+      "waits": [
+       {
+        "wait": "IO:WalWrite",
+        "samples": 9,
+        "approx_backend_seconds": 4.5
+       },
+       {
+        "wait": "Client:ClientRead",
+        "samples": 5,
+        "approx_backend_seconds": 2.5
+       },
+       {
+        "wait": "LWLock:WALWrite",
+        "samples": 5,
+        "approx_backend_seconds": 2.5
+       },
+       {
+        "wait": "Lock:transactionid",
+        "object": "transactionid (row of weave_fanout_group)",
+        "samples": 2,
+        "approx_backend_seconds": 1
+       },
+       {
+        "wait": "Lock:transactionid",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       },
+       {
+        "wait": "Lock:tuple",
+        "object": "tuple:weave_team_runs",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       },
+       {
+        "wait": "IO:DataFileExtend",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       }
+      ]
+     },
+     "notifications": {
+      "channels": {
+       "weave_task_ready": 480
+      },
+      "notifying_commits": 480,
+      "share_of_commits": 0.021289807504657147,
+      "commit_lock_wait_samples": 0,
+      "commit_lock_wait_seconds": 0
+     },
+     "connection_pool": {
+      "max_conns": 48,
+      "acquires": 24776,
+      "empty_acquires": 17,
+      "empty_acquire_share": 0.0006861478850500485,
+      "canceled_acquires": 0,
+      "acquire_ms": 4018.5694,
+      "acquire_mean_ms": 0.16219605263157894,
+      "empty_acquire_wait_seconds": 4.003358899999999
+     },
+     "per_completed_workflow": {
+      "statements": 495.16875,
+      "xacts": 157.7375,
+      "rollbacks": 16.825,
+      "top_statements": [
+       {
+        "calls": 10840,
+        "per_workflow": 67.75,
+        "exec_ms": 4.8520000000002295,
+        "query": "begin"
+       },
+       {
+        "calls": 8104,
+        "per_workflow": 50.65,
+        "exec_ms": 4.485400000000057,
+        "query": "commit"
+       },
+       {
+        "calls": 3683,
+        "per_workflow": 23.01875,
+        "exec_ms": 89.65040000000006,
+        "query": "SELECT value FROM loom_store WHERE namespace=$1 AND key=$2"
+       },
+       {
+        "calls": 2736,
+        "per_workflow": 17.1,
+        "exec_ms": 1.6765999999999268,
+        "query": "rollback"
+       },
+       {
+        "calls": 2077,
+        "per_workflow": 12.98125,
+        "exec_ms": 700.7019000000029,
+        "query": "SELECT id, workspace_id, COALESCE(project_id, $4), COALESCE(agent, $5), COALESCE(agent_id, $6), COALESCE(agent_version, $7), identity_kind, identity_schema_version, COALESCE(execution_scope, $8), COAL"
+       },
+       {
+        "calls": 1923,
+        "per_workflow": 12.01875,
+        "exec_ms": 3104.777199999996,
+        "query": "SELECT workspace_id,project_id,run_id,status, team_run_generation,execution_lease_epoch,resume_generation, team_id,workflow_id,workflow_version,run_snapshot_id, source_kind,source_task_id,establish_id"
+       },
+       {
+        "calls": 1921,
+        "per_workflow": 12.00625,
+        "exec_ms": 509.0901000000006,
+        "query": "SELECT workspace_id, workflow_id, workflow_version, artifact_schema_version, canonicalization_algorithm, canonicalization_version, hash_algorithm, content_hash, payload, created_at FROM weave_publishe"
+       },
+       {
+        "calls": 1601,
+        "per_workflow": 10.00625,
+        "exec_ms": 48.141100000000016,
+        "query": "SELECT workspace_id,run_id,schema_version,attempt_generation,attempt_id,agent,attribution_scope,team_id,workflow_id,workflow_version,run_snapshot_id,conversation_id,parent_run_id,parent_seq,aggregatio"
+       },
+       {
+        "calls": 1600,
+        "per_workflow": 10,
+        "exec_ms": 673.2521000000004,
+        "query": "INSERT INTO weave_team_run_activity_events ( workspace_id,run_id,event_id,kind,node_id,member_id,member_version,detail,occurred_at ) VALUES ($1,$2,$3,$4,NULLIF($5,$10),NULLIF($6,$11),NULLIF($7,$12),$8"
+       },
+       {
+        "calls": 1590,
+        "per_workflow": 9.9375,
+        "exec_ms": 260.3530000000002,
+        "query": "SELECT i.invocation_id,i.created_at,r.terminal_at FROM weave_capability_workflow_invocations i JOIN weave_team_runs r ON r.workspace_id=i.workspace_id AND r.run_id=i.run_id WHERE i.invocation_id=ANY($"
+       }
+      ]
+     }
+    },
+    {
+     "lanes": 20,
+     "outcomes": {
+      "submitted": 270,
+      "completed": 270,
+      "failed": 0,
+      "cancelled": 0,
+      "unsettled": 0,
+      "rejected": 0
+     },
+     "success_rate": 1,
+     "completed_per_second": 4.357874798876815,
+     "measured_seconds": 61.9568052,
+     "all_p50_ms": 4383.5083,
+     "all_p95_ms": 4525.4101,
+     "platform_p50_ms": 176.61079999999995,
+     "platform_p95_ms": 310.09440000000006,
+     "model_p50_ms": 4012.2323,
+     "queue_p50_ms": 130.357,
+     "queue_p95_ms": 165.57100000000003,
+     "backlog_at_window_end": {
+      "queued": 0,
+      "running": 20
+     },
+     "locks": {
+      "every": "500ms",
+      "samples": 143,
+      "active_mean": 0.6853146853146853,
+      "active_max": 6,
+      "wait_samples": 54,
+      "waits": [
+       {
+        "wait": "Client:ClientRead",
+        "samples": 18,
+        "approx_backend_seconds": 9
+       },
+       {
+        "wait": "IO:WalWrite",
+        "samples": 15,
+        "approx_backend_seconds": 7.5
+       },
+       {
+        "wait": "LWLock:WALWrite",
+        "samples": 12,
+        "approx_backend_seconds": 6
+       },
+       {
+        "wait": "Lock:transactionid",
+        "object": "transactionid (row of weave_team_runs)",
+        "samples": 6,
+        "approx_backend_seconds": 3
+       },
+       {
+        "wait": "Lock:tuple",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       },
+       {
+        "wait": "Lock:tuple",
+        "object": "tuple:weave_team_runs",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       },
+       {
+        "wait": "Lock:transactionid",
+        "object": "transactionid (row of weave_fanout_group)",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       }
+      ]
+     },
+     "notifications": {
+      "channels": {
+       "weave_task_ready": 960
+      },
+      "notifying_commits": 960,
+      "share_of_commits": 0.02184051871231942,
+      "commit_lock_wait_samples": 0,
+      "commit_lock_wait_seconds": 0
+     },
+     "connection_pool": {
+      "max_conns": 48,
+      "acquires": 48818,
+      "empty_acquires": 15,
+      "empty_acquire_share": 0.0003072637142037773,
+      "canceled_acquires": 0,
+      "acquire_ms": 3360.9625000000005,
+      "acquire_mean_ms": 0.0688467880699742,
+      "empty_acquire_wait_seconds": 3.2242330000000003
+     },
+     "per_completed_workflow": {
+      "statements": 484.184375,
+      "xacts": 154.475,
+      "rollbacks": 17.115625,
+      "top_statements": [
+       {
+        "calls": 21344,
+        "per_workflow": 66.7,
+        "exec_ms": 10.647500000004396,
+        "query": "begin"
+       },
+       {
+        "calls": 15849,
+        "per_workflow": 49.528125,
+        "exec_ms": 8.980400000004124,
+        "query": "commit"
+       },
+       {
+        "calls": 7366,
+        "per_workflow": 23.01875,
+        "exec_ms": 195.00079999999974,
+        "query": "SELECT value FROM loom_store WHERE namespace=$1 AND key=$2"
+       },
+       {
+        "calls": 5495,
+        "per_workflow": 17.171875,
+        "exec_ms": 5.159400000000048,
+        "query": "rollback"
+       },
+       {
+        "calls": 4154,
+        "per_workflow": 12.98125,
+        "exec_ms": 225.5869999999976,
+        "query": "SELECT id, workspace_id, COALESCE(project_id, $4), COALESCE(agent, $5), COALESCE(agent_id, $6), COALESCE(agent_version, $7), identity_kind, identity_schema_version, COALESCE(execution_scope, $8), COAL"
+       },
+       {
+        "calls": 3848,
+        "per_workflow": 12.025,
+        "exec_ms": 5019.556700000039,
+        "query": "SELECT workspace_id,project_id,run_id,status, team_run_generation,execution_lease_epoch,resume_generation, team_id,workflow_id,workflow_version,run_snapshot_id, source_kind,source_task_id,establish_id"
+       },
+       {
+        "calls": 3840,
+        "per_workflow": 12,
+        "exec_ms": 911.7856000000008,
+        "query": "SELECT workspace_id, workflow_id, workflow_version, artifact_schema_version, canonicalization_algorithm, canonicalization_version, hash_algorithm, content_hash, payload, created_at FROM weave_publishe"
+       },
+       {
+        "calls": 3202,
+        "per_workflow": 10.00625,
+        "exec_ms": 101.7813,
+        "query": "SELECT workspace_id,run_id,schema_version,attempt_generation,attempt_id,agent,attribution_scope,team_id,workflow_id,workflow_version,run_snapshot_id,conversation_id,parent_run_id,parent_seq,aggregatio"
+       },
+       {
+        "calls": 3200,
+        "per_workflow": 10,
+        "exec_ms": 1007.2474000000009,
+        "query": "INSERT INTO weave_team_run_activity_events ( workspace_id,run_id,event_id,kind,node_id,member_id,member_version,detail,occurred_at ) VALUES ($1,$2,$3,$4,NULLIF($5,$10),NULLIF($6,$11),NULLIF($7,$12),$8"
+       },
+       {
+        "calls": 2560,
+        "per_workflow": 8,
+        "exec_ms": 11.646400000000021,
+        "query": "SELECT pg_advisory_xact_lock(hashtextextended($1, $3) # hashtextextended($2, $4))"
+       }
+      ]
+     }
+    },
+    {
+     "lanes": 50,
+     "outcomes": {
+      "submitted": 608,
+      "completed": 608,
+      "failed": 0,
+      "cancelled": 0,
+      "unsettled": 0,
+      "rejected": 0
+     },
+     "success_rate": 1,
+     "completed_per_second": 9.443608480585944,
+     "measured_seconds": 64.3821693,
+     "all_p50_ms": 4793.2862,
+     "all_p95_ms": 5897.7403,
+     "platform_p50_ms": 457.58810000000005,
+     "platform_p95_ms": 1289.7288000000003,
+     "model_p50_ms": 4051.2289,
+     "queue_p50_ms": 141.718,
+     "queue_p95_ms": 295.99,
+     "backlog_at_window_end": {
+      "queued": 0,
+      "running": 75
+     },
+     "locks": {
+      "every": "500ms",
+      "samples": 148,
+      "active_mean": 1.837837837837838,
+      "active_max": 30,
+      "wait_samples": 155,
+      "waits": [
+       {
+        "wait": "Lock:transactionid",
+        "object": "transactionid (row of weave_team_runs)",
+        "samples": 38,
+        "approx_backend_seconds": 19
+       },
+       {
+        "wait": "Client:ClientRead",
+        "samples": 30,
+        "approx_backend_seconds": 15
+       },
+       {
+        "wait": "LWLock:WALWrite",
+        "samples": 29,
+        "approx_backend_seconds": 14.5
+       },
+       {
+        "wait": "IO:WalWrite",
+        "samples": 24,
+        "approx_backend_seconds": 12
+       },
+       {
+        "wait": "Lock:tuple",
+        "object": "tuple:weave_team_runs",
+        "samples": 18,
+        "approx_backend_seconds": 9
+       },
+       {
+        "wait": "Lock:transactionid",
+        "object": "transactionid (row of weave_fanout_group)",
+        "samples": 6,
+        "approx_backend_seconds": 3
+       },
+       {
+        "wait": "Lock:tuple",
+        "object": "tuple:weave_fanout_group",
+        "samples": 2,
+        "approx_backend_seconds": 1
+       },
+       {
+        "wait": "IO:DataFileExtend",
+        "samples": 2,
+        "approx_backend_seconds": 1
+       },
+       {
+        "wait": "Lock:transactionid",
+        "samples": 2,
+        "approx_backend_seconds": 1
+       },
+       {
+        "wait": "Lock:advisory",
+        "object": "advisory",
+        "samples": 2,
+        "approx_backend_seconds": 1
+       },
+       {
+        "wait": "Lock:tuple",
+        "object": "transactionid (row of weave_team_runs)",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       },
+       {
+        "wait": "Lock:tuple",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       }
+      ]
+     },
+     "notifications": {
+      "channels": {
+       "weave_task_ready": 2127
+      },
+      "notifying_commits": 2127,
+      "share_of_commits": 0.02236216829976029,
+      "commit_lock_wait_samples": 0,
+      "commit_lock_wait_seconds": 0
+     },
+     "connection_pool": {
+      "max_conns": 48,
+      "acquires": 106432,
+      "empty_acquires": 2627,
+      "empty_acquire_share": 0.024682426337943476,
+      "canceled_acquires": 0,
+      "acquire_ms": 30324.461900000002,
+      "acquire_mean_ms": 0.28491865134546,
+      "empty_acquire_wait_seconds": 29.7316352
+     },
+     "per_completed_workflow": {
+      "statements": 477.03102961918194,
+      "xacts": 151.06488011283497,
+      "rollbacks": 16.909732016925247,
+      "top_statements": [
+       {
+        "calls": 46617,
+        "per_workflow": 65.75035260930889,
+        "exec_ms": 22.88729999998023,
+        "query": "begin"
+       },
+       {
+        "calls": 34598,
+        "per_workflow": 48.79830747531735,
+        "exec_ms": 20.420099999978518,
+        "query": "commit"
+       },
+       {
+        "calls": 16348,
+        "per_workflow": 23.057827926657264,
+        "exec_ms": 479.6380000000032,
+        "query": "SELECT value FROM loom_store WHERE namespace=$1 AND key=$2"
+       },
+       {
+        "calls": 12019,
+        "per_workflow": 16.952045133991536,
+        "exec_ms": 6.439000000004206,
+        "query": "rollback"
+       },
+       {
+        "calls": 9142,
+        "per_workflow": 12.894217207334274,
+        "exec_ms": 538.9284000000017,
+        "query": "SELECT id, workspace_id, COALESCE(project_id, $4), COALESCE(agent, $5), COALESCE(agent_id, $6), COALESCE(agent_version, $7), identity_kind, identity_schema_version, COALESCE(execution_scope, $8), COAL"
+       },
+       {
+        "calls": 8551,
+        "per_workflow": 12.06064880112835,
+        "exec_ms": 20934.399499999923,
+        "query": "SELECT workspace_id,project_id,run_id,status, team_run_generation,execution_lease_epoch,resume_generation, team_id,workflow_id,workflow_version,run_snapshot_id, source_kind,source_task_id,establish_id"
+       },
+       {
+        "calls": 8508,
+        "per_workflow": 12,
+        "exec_ms": 1958.9847999999952,
+        "query": "SELECT workspace_id, workflow_id, workflow_version, artifact_schema_version, canonicalization_algorithm, canonicalization_version, hash_algorithm, content_hash, payload, created_at FROM weave_publishe"
+       },
+       {
+        "calls": 7100,
+        "per_workflow": 10.01410437235543,
+        "exec_ms": 252.70160000000058,
+        "query": "SELECT workspace_id,run_id,schema_version,attempt_generation,attempt_id,agent,attribution_scope,team_id,workflow_id,workflow_version,run_snapshot_id,conversation_id,parent_run_id,parent_seq,aggregatio"
+       },
+       {
+        "calls": 7090,
+        "per_workflow": 10,
+        "exec_ms": 4920.0845000000245,
+        "query": "INSERT INTO weave_team_run_activity_events ( workspace_id,run_id,event_id,kind,node_id,member_id,member_version,detail,occurred_at ) VALUES ($1,$2,$3,$4,NULLIF($5,$10),NULLIF($6,$11),NULLIF($7,$12),$8"
+       },
+       {
+        "calls": 5672,
+        "per_workflow": 8,
+        "exec_ms": 28.53460000000014,
+        "query": "SELECT pg_advisory_xact_lock(hashtextextended($1, $3) # hashtextextended($2, $4))"
+       }
+      ]
+     }
+    },
+    {
+     "lanes": 100,
+     "outcomes": {
+      "submitted": 891,
+      "completed": 891,
+      "failed": 0,
+      "cancelled": 0,
+      "unsettled": 0,
+      "rejected": 0
+     },
+     "success_rate": 1,
+     "completed_per_second": 13.761673509451596,
+     "measured_seconds": 64.7450326,
+     "all_p50_ms": 6135.0108,
+     "all_p95_ms": 9052.4126,
+     "platform_p50_ms": 1240.4557,
+     "platform_p95_ms": 3752.4730000000004,
+     "model_p50_ms": 4103.3544999999995,
+     "queue_p50_ms": 307.69699999999995,
+     "queue_p95_ms": 3706.61,
+     "backlog_at_window_end": {
+      "queued": 2,
+      "running": 230
+     },
+     "locks": {
+      "every": "500ms",
+      "samples": 149,
+      "active_mean": 1.9261744966442953,
+      "active_max": 10,
+      "wait_samples": 208,
+      "waits": [
+       {
+        "wait": "Client:ClientRead",
+        "samples": 65,
+        "approx_backend_seconds": 32.5
+       },
+       {
+        "wait": "LWLock:WALWrite",
+        "samples": 40,
+        "approx_backend_seconds": 20
+       },
+       {
+        "wait": "IO:WalWrite",
+        "samples": 35,
+        "approx_backend_seconds": 17.5
+       },
+       {
+        "wait": "Lock:transactionid",
+        "object": "transactionid (row of weave_team_runs)",
+        "samples": 33,
+        "approx_backend_seconds": 16.5
+       },
+       {
+        "wait": "Lock:tuple",
+        "object": "tuple:weave_team_runs",
+        "samples": 14,
+        "approx_backend_seconds": 7
+       },
+       {
+        "wait": "Lock:transactionid",
+        "object": "transactionid (row of weave_fanout_group)",
+        "samples": 13,
+        "approx_backend_seconds": 6.5
+       },
+       {
+        "wait": "Lock:transactionid",
+        "samples": 3,
+        "approx_backend_seconds": 1.5
+       },
+       {
+        "wait": "Lock:tuple",
+        "object": "tuple:weave_fanout_group",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       },
+       {
+        "wait": "Lock:object",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       },
+       {
+        "wait": "IO:DataFileWrite",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       },
+       {
+        "wait": "Lock:tuple",
+        "object": "transactionid (row of weave_team_runs)",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       },
+       {
+        "wait": "IO:DataFileRead",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       }
+      ]
+     },
+     "notifications": {
+      "channels": {
+       "weave_task_ready": 3255
+      },
+      "notifying_commits": 3255,
+      "share_of_commits": 0.022782790069363273,
+      "commit_lock_wait_samples": 0,
+      "commit_lock_wait_seconds": 0
+     },
+     "connection_pool": {
+      "max_conns": 48,
+      "acquires": 161133,
+      "empty_acquires": 37563,
+      "empty_acquire_share": 0.23311798328089217,
+      "canceled_acquires": 0,
+      "acquire_ms": 715522.5488,
+      "acquire_mean_ms": 4.440571135645709,
+      "empty_acquire_wait_seconds": 715.0059067
+     },
+     "per_completed_workflow": {
+      "statements": 472.72073732718894,
+      "xacts": 148.14285714285714,
+      "rollbacks": 16.46451612903226,
+      "top_statements": [
+       {
+        "calls": 70510,
+        "per_workflow": 64.98617511520737,
+        "exec_ms": 32.774700000036475,
+        "query": "begin"
+       },
+       {
+        "calls": 52530,
+        "per_workflow": 48.414746543778804,
+        "exec_ms": 31.122300000030968,
+        "query": "commit"
+       },
+       {
+        "calls": 25053,
+        "per_workflow": 23.09032258064516,
+        "exec_ms": 748.2685000000241,
+        "query": "SELECT value FROM loom_store WHERE namespace=$1 AND key=$2"
+       },
+       {
+        "calls": 17980,
+        "per_workflow": 16.571428571428573,
+        "exec_ms": 9.890499999989519,
+        "query": "rollback"
+       },
+       {
+        "calls": 13890,
+        "per_workflow": 12.80184331797235,
+        "exec_ms": 797.833000000008,
+        "query": "SELECT id, workspace_id, COALESCE(project_id, $4), COALESCE(agent, $5), COALESCE(agent_id, $6), COALESCE(agent_version, $7), identity_kind, identity_schema_version, COALESCE(execution_scope, $8), COAL"
+       },
+       {
+        "calls": 13138,
+        "per_workflow": 12.108755760368664,
+        "exec_ms": 34244.765499999725,
+        "query": "SELECT workspace_id,project_id,run_id,status, team_run_generation,execution_lease_epoch,resume_generation, team_id,workflow_id,workflow_version,run_snapshot_id, source_kind,source_task_id,establish_id"
+       },
+       {
+        "calls": 13020,
+        "per_workflow": 12,
+        "exec_ms": 2989.7465000000025,
+        "query": "SELECT workspace_id, workflow_id, workflow_version, artifact_schema_version, canonicalization_algorithm, canonicalization_version, hash_algorithm, content_hash, payload, created_at FROM weave_publishe"
+       },
+       {
+        "calls": 10885,
+        "per_workflow": 10.03225806451613,
+        "exec_ms": 405.8536999999986,
+        "query": "SELECT workspace_id,run_id,schema_version,attempt_generation,attempt_id,agent,attribution_scope,team_id,workflow_id,workflow_version,run_snapshot_id,conversation_id,parent_run_id,parent_seq,aggregatio"
+       },
+       {
+        "calls": 10850,
+        "per_workflow": 10,
+        "exec_ms": 3000.9564999999857,
+        "query": "INSERT INTO weave_team_run_activity_events ( workspace_id,run_id,event_id,kind,node_id,member_id,member_version,detail,occurred_at ) VALUES ($1,$2,$3,$4,NULLIF($5,$10),NULLIF($6,$11),NULLIF($7,$12),$8"
+       },
+       {
+        "calls": 8680,
+        "per_workflow": 8,
+        "exec_ms": 48.50090000000051,
+        "query": "SELECT pg_advisory_xact_lock(hashtextextended($1, $3) # hashtextextended($2, $4))"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "case": "base-1",
+   "report_sha256": "d7cf6568801c0f6d83c718e2fffc47a3af0263fd308e865484877f1f638843a4",
+   "steps": [
+    {
+     "lanes": 10,
+     "outcomes": {
+      "submitted": 140,
+      "completed": 140,
+      "failed": 0,
+      "cancelled": 0,
+      "unsettled": 0,
+      "rejected": 0
+     },
+     "success_rate": 1,
+     "completed_per_second": 2.2259533263219513,
+     "measured_seconds": 62.8944005,
+     "all_p50_ms": 4412.4259,
+     "all_p95_ms": 4506.9183,
+     "platform_p50_ms": 218.98579999999956,
+     "platform_p95_ms": 292.6537999999997,
+     "model_p50_ms": 4011.9371,
+     "queue_p50_ms": 144.13299999999998,
+     "queue_p95_ms": 169.802,
+     "backlog_at_window_end": {
+      "queued": 0,
+      "running": 34
+     },
+     "locks": {
+      "every": "500ms",
+      "samples": 145,
+      "active_mean": 0.5724137931034483,
+      "active_max": 8,
+      "wait_samples": 49,
+      "waits": [
+       {
+        "wait": "IO:WalWrite",
+        "samples": 16,
+        "approx_backend_seconds": 8
+       },
+       {
+        "wait": "LWLock:WALWrite",
+        "samples": 14,
+        "approx_backend_seconds": 7
+       },
+       {
+        "wait": "Client:ClientRead",
+        "samples": 8,
+        "approx_backend_seconds": 4
+       },
+       {
+        "wait": "Lock:transactionid",
+        "object": "transactionid (row of weave_team_runs)",
+        "samples": 3,
+        "approx_backend_seconds": 1.5
+       },
+       {
+        "wait": "Lock:advisory",
+        "samples": 2,
+        "approx_backend_seconds": 1
+       },
+       {
+        "wait": "Lock:tuple",
+        "object": "transactionid (row of weave_team_runs)",
+        "samples": 2,
+        "approx_backend_seconds": 1
+       },
+       {
+        "wait": "Lock:advisory",
+        "object": "advisory",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       },
+       {
+        "wait": "Lock:transactionid",
+        "object": "transactionid (row of weave_fanout_group)",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       },
+       {
+        "wait": "Lock:tuple",
+        "object": "tuple:weave_team_runs",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       },
+       {
+        "wait": "Lock:transactionid",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       }
+      ]
+     },
+     "notifications": {
+      "channels": {
+       "weave_task_ready": 480
+      },
+      "notifying_commits": 480,
+      "share_of_commits": 0.019415904862066177,
+      "commit_lock_wait_samples": 0,
+      "commit_lock_wait_seconds": 0
+     },
+     "connection_pool": {
+      "max_conns": 48,
+      "acquires": 26912,
+      "empty_acquires": 13,
+      "empty_acquire_share": 0.00048305588585017834,
+      "canceled_acquires": 0,
+      "acquire_ms": 3101.6281999999997,
+      "acquire_mean_ms": 0.11525075059453031,
+      "empty_acquire_wait_seconds": 3.0875089999999994
+     },
+     "per_completed_workflow": {
+      "statements": 555.43125,
+      "xacts": 168.375,
+      "rollbacks": 13.8625,
+      "top_statements": [
+       {
+        "calls": 12723,
+        "per_workflow": 79.51875,
+        "exec_ms": 6.044800000000292,
+        "query": "begin"
+       },
+       {
+        "calls": 10466,
+        "per_workflow": 65.4125,
+        "exec_ms": 5.447199999999983,
+        "query": "commit"
+       },
+       {
+        "calls": 3689,
+        "per_workflow": 23.05625,
+        "exec_ms": 96.35340000000024,
+        "query": "SELECT value FROM loom_store WHERE namespace=$1 AND key=$2"
+       },
+       {
+        "calls": 2257,
+        "per_workflow": 14.10625,
+        "exec_ms": 1.2348999999999515,
+        "query": "rollback"
+       },
+       {
+        "calls": 2076,
+        "per_workflow": 12.975,
+        "exec_ms": 121.28619999999998,
+        "query": "SELECT id, workspace_id, COALESCE(project_id, $4), COALESCE(agent, $5), COALESCE(agent_id, $6), COALESCE(agent_version, $7), identity_kind, identity_schema_version, COALESCE(execution_scope, $8), COAL"
+       },
+       {
+        "calls": 1929,
+        "per_workflow": 12.05625,
+        "exec_ms": 59.564599999999885,
+        "query": "SELECT g.enabled FROM weave_capability_apps a JOIN weave_capability_grants g ON g.workspace_id=a.workspace_id AND g.app_id=a.id WHERE a.workspace_id=$1 AND a.id=$2 AND a.enabled AND g.capability_id=$3"
+       },
+       {
+        "calls": 1929,
+        "per_workflow": 12.05625,
+        "exec_ms": 2776.570900000004,
+        "query": "SELECT workspace_id,project_id,run_id,status, team_run_generation,execution_lease_epoch,resume_generation, team_id,workflow_id,workflow_version,run_snapshot_id, source_kind,source_task_id,establish_id"
+       },
+       {
+        "calls": 1920,
+        "per_workflow": 12,
+        "exec_ms": 486.4833000000005,
+        "query": "SELECT workspace_id, workflow_id, workflow_version, artifact_schema_version, canonicalization_algorithm, canonicalization_version, hash_algorithm, content_hash, payload, created_at FROM weave_publishe"
+       },
+       {
+        "calls": 1603,
+        "per_workflow": 10.01875,
+        "exec_ms": 51.757300000000065,
+        "query": "SELECT workspace_id,run_id,schema_version,attempt_generation,attempt_id,agent,attribution_scope,team_id,workflow_id,workflow_version,run_snapshot_id,conversation_id,parent_run_id,parent_seq,aggregatio"
+       },
+       {
+        "calls": 1602,
+        "per_workflow": 10.0125,
+        "exec_ms": 260.98059999999987,
+        "query": "SELECT i.invocation_id,i.created_at,r.terminal_at FROM weave_capability_workflow_invocations i JOIN weave_team_runs r ON r.workspace_id=i.workspace_id AND r.run_id=i.run_id WHERE i.invocation_id=ANY($"
+       }
+      ]
+     }
+    },
+    {
+     "lanes": 20,
+     "outcomes": {
+      "submitted": 279,
+      "completed": 279,
+      "failed": 0,
+      "cancelled": 0,
+      "unsettled": 0,
+      "rejected": 0
+     },
+     "success_rate": 1,
+     "completed_per_second": 4.43468851119839,
+     "measured_seconds": 62.9130996,
+     "all_p50_ms": 4398.4395,
+     "all_p95_ms": 4558.3692,
+     "platform_p50_ms": 207.28829999999996,
+     "platform_p95_ms": 334.96160000000026,
+     "model_p50_ms": 4010.3785,
+     "queue_p50_ms": 130.761,
+     "queue_p95_ms": 165.034,
+     "backlog_at_window_end": {
+      "queued": 0,
+      "running": 45
+     },
+     "locks": {
+      "every": "500ms",
+      "samples": 145,
+      "active_mean": 0.7586206896551724,
+      "active_max": 7,
+      "wait_samples": 71,
+      "waits": [
+       {
+        "wait": "Client:ClientRead",
+        "samples": 21,
+        "approx_backend_seconds": 10.5
+       },
+       {
+        "wait": "IO:WalWrite",
+        "samples": 21,
+        "approx_backend_seconds": 10.5
+       },
+       {
+        "wait": "LWLock:WALWrite",
+        "samples": 14,
+        "approx_backend_seconds": 7
+       },
+       {
+        "wait": "Lock:transactionid",
+        "object": "transactionid (row of weave_team_runs)",
+        "samples": 9,
+        "approx_backend_seconds": 4.5
+       },
+       {
+        "wait": "Lock:tuple",
+        "object": "tuple:weave_team_runs",
+        "samples": 2,
+        "approx_backend_seconds": 1
+       },
+       {
+        "wait": "Lock:transactionid",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       },
+       {
+        "wait": "Lock:transactionid",
+        "object": "transactionid",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       },
+       {
+        "wait": "Lock:transactionid",
+        "object": "transactionid (row of weave_fanout_group)",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       },
+       {
+        "wait": "LWLock:WALInsert",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       }
+      ]
+     },
+     "notifications": {
+      "channels": {
+       "weave_task_ready": 960
+      },
+      "notifying_commits": 960,
+      "share_of_commits": 0.019262410209077412,
+      "commit_lock_wait_samples": 0,
+      "commit_lock_wait_seconds": 0
+     },
+     "connection_pool": {
+      "max_conns": 48,
+      "acquires": 52831,
+      "empty_acquires": 107,
+      "empty_acquire_share": 0.00202532603963582,
+      "canceled_acquires": 0,
+      "acquire_ms": 12059.2386,
+      "acquire_mean_ms": 0.22826065378281693,
+      "empty_acquire_wait_seconds": 11.9123164
+     },
+     "per_completed_workflow": {
+      "statements": 542.475,
+      "xacts": 169.853125,
+      "rollbacks": 14.109375,
+      "top_statements": [
+       {
+        "calls": 24978,
+        "per_workflow": 78.05625,
+        "exec_ms": 11.553700000001054,
+        "query": "begin"
+       },
+       {
+        "calls": 20495,
+        "per_workflow": 64.046875,
+        "exec_ms": 12.202600000003848,
+        "query": "commit"
+       },
+       {
+        "calls": 7363,
+        "per_workflow": 23.009375,
+        "exec_ms": 194.18750000000068,
+        "query": "SELECT value FROM loom_store WHERE namespace=$1 AND key=$2"
+       },
+       {
+        "calls": 4483,
+        "per_workflow": 14.009375,
+        "exec_ms": 2.769000000000183,
+        "query": "rollback"
+       },
+       {
+        "calls": 4150,
+        "per_workflow": 12.96875,
+        "exec_ms": 231.08220000000102,
+        "query": "SELECT id, workspace_id, COALESCE(project_id, $4), COALESCE(agent, $5), COALESCE(agent_id, $6), COALESCE(agent_version, $7), identity_kind, identity_schema_version, COALESCE(execution_scope, $8), COAL"
+       },
+       {
+        "calls": 3843,
+        "per_workflow": 12.009375,
+        "exec_ms": 4456.442800000058,
+        "query": "SELECT workspace_id,project_id,run_id,status, team_run_generation,execution_lease_epoch,resume_generation, team_id,workflow_id,workflow_version,run_snapshot_id, source_kind,source_task_id,establish_id"
+       },
+       {
+        "calls": 3840,
+        "per_workflow": 12,
+        "exec_ms": 113.82720000000059,
+        "query": "SELECT g.enabled FROM weave_capability_apps a JOIN weave_capability_grants g ON g.workspace_id=a.workspace_id AND g.app_id=a.id WHERE a.workspace_id=$1 AND a.id=$2 AND a.enabled AND g.capability_id=$3"
+       },
+       {
+        "calls": 3840,
+        "per_workflow": 12,
+        "exec_ms": 910.6803999999992,
+        "query": "SELECT workspace_id, workflow_id, workflow_version, artifact_schema_version, canonicalization_algorithm, canonicalization_version, hash_algorithm, content_hash, payload, created_at FROM weave_publishe"
+       },
+       {
+        "calls": 3201,
+        "per_workflow": 10.003125,
+        "exec_ms": 110.50149999999991,
+        "query": "SELECT workspace_id,run_id,schema_version,attempt_generation,attempt_id,agent,attribution_scope,team_id,workflow_id,workflow_version,run_snapshot_id,conversation_id,parent_run_id,parent_seq,aggregatio"
+       },
+       {
+        "calls": 3200,
+        "per_workflow": 10,
+        "exec_ms": 269.26160000000186,
+        "query": "SELECT i.workspace_id,i.application_id,i.request_id,i.invocation_id,i.credential_id, i.capability_id,i.revision,i.definition_hash,i.workflow_id,i.workflow_version,i.input,i.input_hash,COALESCE(i.lane,"
+       }
+      ]
+     }
+    },
+    {
+     "lanes": 50,
+     "outcomes": {
+      "submitted": 634,
+      "completed": 634,
+      "failed": 0,
+      "cancelled": 0,
+      "unsettled": 0,
+      "rejected": 0
+     },
+     "success_rate": 1,
+     "completed_per_second": 9.870776265449436,
+     "measured_seconds": 64.2300041,
+     "all_p50_ms": 4513.5776,
+     "all_p95_ms": 5957.0843,
+     "platform_p50_ms": 286.4528999999997,
+     "platform_p95_ms": 1509.8573,
+     "model_p50_ms": 4030.71,
+     "queue_p50_ms": 130.49300000000002,
+     "queue_p95_ms": 243.42999999999998,
+     "backlog_at_window_end": {
+      "queued": 0,
+      "running": 142
+     },
+     "locks": {
+      "every": "500ms",
+      "samples": 148,
+      "active_mean": 1.2432432432432432,
+      "active_max": 8,
+      "wait_samples": 135,
+      "waits": [
+       {
+        "wait": "Client:ClientRead",
+        "samples": 45,
+        "approx_backend_seconds": 22.5
+       },
+       {
+        "wait": "LWLock:WALWrite",
+        "samples": 35,
+        "approx_backend_seconds": 17.5
+       },
+       {
+        "wait": "IO:WalWrite",
+        "samples": 27,
+        "approx_backend_seconds": 13.5
+       },
+       {
+        "wait": "Lock:transactionid",
+        "object": "transactionid (row of weave_team_runs)",
+        "samples": 14,
+        "approx_backend_seconds": 7
+       },
+       {
+        "wait": "Lock:tuple",
+        "object": "tuple:weave_team_runs",
+        "samples": 6,
+        "approx_backend_seconds": 3
+       },
+       {
+        "wait": "Lock:transactionid",
+        "object": "transactionid (row of weave_fanout_group)",
+        "samples": 4,
+        "approx_backend_seconds": 2
+       },
+       {
+        "wait": "Lock:transactionid",
+        "samples": 3,
+        "approx_backend_seconds": 1.5
+       },
+       {
+        "wait": "Lock:tuple",
+        "object": "tuple:weave_fanout_group",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       }
+      ]
+     },
+     "notifications": {
+      "channels": {
+       "weave_task_ready": 2202
+      },
+      "notifying_commits": 2202,
+      "share_of_commits": 0.02023859855517362,
+      "commit_lock_wait_samples": 0,
+      "commit_lock_wait_seconds": 0
+     },
+     "connection_pool": {
+      "max_conns": 48,
+      "acquires": 119234,
+      "empty_acquires": 3835,
+      "empty_acquire_share": 0.03216364459801734,
+      "canceled_acquires": 0,
+      "acquire_ms": 42287.4681,
+      "acquire_mean_ms": 0.3546594771625543,
+      "empty_acquire_wait_seconds": 41.9548578
+     },
+     "per_completed_workflow": {
+      "statements": 534.5517711171663,
+      "xacts": 162.2356948228883,
+      "rollbacks": 14.00408719346049,
+      "top_statements": [
+       {
+        "calls": 56451,
+        "per_workflow": 76.90871934604904,
+        "exec_ms": 25.638399999997944,
+        "query": "begin"
+       },
+       {
+        "calls": 46107,
+        "per_workflow": 62.81607629427793,
+        "exec_ms": 24.696799999983384,
+        "query": "commit"
+       },
+       {
+        "calls": 16902,
+        "per_workflow": 23.02724795640327,
+        "exec_ms": 455.6993999999988,
+        "query": "SELECT value FROM loom_store WHERE namespace=$1 AND key=$2"
+       },
+       {
+        "calls": 10344,
+        "per_workflow": 14.092643051771118,
+        "exec_ms": 10.550600000002579,
+        "query": "rollback"
+       },
+       {
+        "calls": 9488,
+        "per_workflow": 12.926430517711172,
+        "exec_ms": 524.8031000000019,
+        "query": "SELECT id, workspace_id, COALESCE(project_id, $4), COALESCE(agent, $5), COALESCE(agent_id, $6), COALESCE(agent_version, $7), identity_kind, identity_schema_version, COALESCE(execution_scope, $8), COAL"
+       },
+       {
+        "calls": 8834,
+        "per_workflow": 12.035422343324251,
+        "exec_ms": 16242.664999999815,
+        "query": "SELECT workspace_id,project_id,run_id,status, team_run_generation,execution_lease_epoch,resume_generation, team_id,workflow_id,workflow_version,run_snapshot_id, source_kind,source_task_id,establish_id"
+       },
+       {
+        "calls": 8813,
+        "per_workflow": 12.006811989100818,
+        "exec_ms": 263.9466000000016,
+        "query": "SELECT g.enabled FROM weave_capability_apps a JOIN weave_capability_grants g ON g.workspace_id=a.workspace_id AND g.app_id=a.id WHERE a.workspace_id=$1 AND a.id=$2 AND a.enabled AND g.capability_id=$3"
+       },
+       {
+        "calls": 8808,
+        "per_workflow": 12,
+        "exec_ms": 1997.3868999999909,
+        "query": "SELECT workspace_id, workflow_id, workflow_version, artifact_schema_version, canonicalization_algorithm, canonicalization_version, hash_algorithm, content_hash, payload, created_at FROM weave_publishe"
+       },
+       {
+        "calls": 7344,
+        "per_workflow": 10.005449591280653,
+        "exec_ms": 245.52459999999928,
+        "query": "SELECT workspace_id,run_id,schema_version,attempt_generation,attempt_id,agent,attribution_scope,team_id,workflow_id,workflow_version,run_snapshot_id,conversation_id,parent_run_id,parent_seq,aggregatio"
+       },
+       {
+        "calls": 7340,
+        "per_workflow": 10,
+        "exec_ms": 2284.7698000000023,
+        "query": "INSERT INTO weave_team_run_activity_events ( workspace_id,run_id,event_id,kind,node_id,member_id,member_version,detail,occurred_at ) VALUES ($1,$2,$3,$4,NULLIF($5,$10),NULLIF($6,$11),NULLIF($7,$12),$8"
+       }
+      ]
+     }
+    },
+    {
+     "lanes": 100,
+     "outcomes": {
+      "submitted": 961,
+      "completed": 961,
+      "failed": 0,
+      "cancelled": 0,
+      "unsettled": 0,
+      "rejected": 0
+     },
+     "success_rate": 1,
+     "completed_per_second": 14.870162790588784,
+     "measured_seconds": 64.6260578,
+     "all_p50_ms": 5825.2667,
+     "all_p95_ms": 7523.7572,
+     "platform_p50_ms": 1066.6114999999995,
+     "platform_p95_ms": 2498.1981999999994,
+     "model_p50_ms": 4092.3863,
+     "queue_p50_ms": 273.83399999999995,
+     "queue_p95_ms": 3699.9619999999995,
+     "backlog_at_window_end": {
+      "queued": 2,
+      "running": 241
+     },
+     "locks": {
+      "every": "500ms",
+      "samples": 149,
+      "active_mean": 2.1476510067114094,
+      "active_max": 27,
+      "wait_samples": 237,
+      "waits": [
+       {
+        "wait": "Client:ClientRead",
+        "samples": 78,
+        "approx_backend_seconds": 39
+       },
+       {
+        "wait": "LWLock:WALWrite",
+        "samples": 61,
+        "approx_backend_seconds": 30.5
+       },
+       {
+        "wait": "IO:WalWrite",
+        "samples": 34,
+        "approx_backend_seconds": 17
+       },
+       {
+        "wait": "Lock:transactionid",
+        "object": "transactionid (row of weave_team_runs)",
+        "samples": 28,
+        "approx_backend_seconds": 14
+       },
+       {
+        "wait": "Lock:tuple",
+        "object": "tuple:weave_team_runs",
+        "samples": 15,
+        "approx_backend_seconds": 7.5
+       },
+       {
+        "wait": "Lock:transactionid",
+        "object": "transactionid (row of weave_fanout_group)",
+        "samples": 6,
+        "approx_backend_seconds": 3
+       },
+       {
+        "wait": "Lock:advisory",
+        "object": "advisory",
+        "samples": 4,
+        "approx_backend_seconds": 2
+       },
+       {
+        "wait": "IO:DataFileExtend",
+        "samples": 3,
+        "approx_backend_seconds": 1.5
+       },
+       {
+        "wait": "Lock:transactionid",
+        "samples": 2,
+        "approx_backend_seconds": 1
+       },
+       {
+        "wait": "IO:DataFileRead",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       },
+       {
+        "wait": "Lock:tuple",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       },
+       {
+        "wait": "Lock:tuple",
+        "object": "tuple:weave_fanout_group",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       },
+       {
+        "wait": "LWLock:XidGen",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       },
+       {
+        "wait": "Lock:tuple",
+        "object": "transactionid (row of weave_team_runs)",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       },
+       {
+        "wait": "IO:AioIoCompletion",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       }
+      ]
+     },
+     "notifications": {
+      "channels": {
+       "weave_task_ready": 3399
+      },
+      "notifying_commits": 3399,
+      "share_of_commits": 0.02048157923279945,
+      "commit_lock_wait_samples": 0,
+      "commit_lock_wait_seconds": 0
+     },
+     "connection_pool": {
+      "max_conns": 48,
+      "acquires": 182002,
+      "empty_acquires": 36502,
+      "empty_acquire_share": 0.20055823562378436,
+      "canceled_acquires": 0,
+      "acquire_ms": 629123.2964,
+      "acquire_mean_ms": 3.456683423259085,
+      "empty_acquire_wait_seconds": 628.4721074
+     },
+     "per_completed_workflow": {
+      "statements": 529.8631950573698,
+      "xacts": 160.62665489849957,
+      "rollbacks": 14.153574580759047,
+      "top_statements": [
+       {
+        "calls": 86147,
+        "per_workflow": 76.03442188879082,
+        "exec_ms": 36.050700000003395,
+        "query": "begin"
+       },
+       {
+        "calls": 70076,
+        "per_workflow": 61.849955869373346,
+        "exec_ms": 36.38970000002128,
+        "query": "commit"
+       },
+       {
+        "calls": 26118,
+        "per_workflow": 23.05207413945278,
+        "exec_ms": 729.3086000000286,
+        "query": "SELECT value FROM loom_store WHERE namespace=$1 AND key=$2"
+       },
+       {
+        "calls": 16071,
+        "per_workflow": 14.184466019417476,
+        "exec_ms": 8.098299999988654,
+        "query": "rollback"
+       },
+       {
+        "calls": 14508,
+        "per_workflow": 12.804942630185348,
+        "exec_ms": 783.3944999999917,
+        "query": "SELECT id, workspace_id, COALESCE(project_id, $4), COALESCE(agent, $5), COALESCE(agent_id, $6), COALESCE(agent_version, $7), identity_kind, identity_schema_version, COALESCE(execution_scope, $8), COAL"
+       },
+       {
+        "calls": 13674,
+        "per_workflow": 12.068843777581641,
+        "exec_ms": 28974.478099999684,
+        "query": "SELECT workspace_id,project_id,run_id,status, team_run_generation,execution_lease_epoch,resume_generation, team_id,workflow_id,workflow_version,run_snapshot_id, source_kind,source_task_id,establish_id"
+       },
+       {
+        "calls": 13606,
+        "per_workflow": 12.00882612533098,
+        "exec_ms": 492.2871999999936,
+        "query": "SELECT g.enabled FROM weave_capability_apps a JOIN weave_capability_grants g ON g.workspace_id=a.workspace_id AND g.app_id=a.id WHERE a.workspace_id=$1 AND a.id=$2 AND a.enabled AND g.capability_id=$3"
+       },
+       {
+        "calls": 13596,
+        "per_workflow": 12,
+        "exec_ms": 2972.0241999999052,
+        "query": "SELECT workspace_id, workflow_id, workflow_version, artifact_schema_version, canonicalization_algorithm, canonicalization_version, hash_algorithm, content_hash, payload, created_at FROM weave_publishe"
+       },
+       {
+        "calls": 11347,
+        "per_workflow": 10.015004413062666,
+        "exec_ms": 401.0415999999951,
+        "query": "SELECT workspace_id,run_id,schema_version,attempt_generation,attempt_id,agent,attribution_scope,team_id,workflow_id,workflow_version,run_snapshot_id,conversation_id,parent_run_id,parent_seq,aggregatio"
+       },
+       {
+        "calls": 11330,
+        "per_workflow": 10,
+        "exec_ms": 986.3196000000012,
+        "query": "SELECT i.workspace_id,i.application_id,i.request_id,i.invocation_id,i.credential_id, i.capability_id,i.revision,i.definition_hash,i.workflow_id,i.workflow_version,i.input,i.input_hash,COALESCE(i.lane,"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "case": "base-2",
+   "report_sha256": "07cc1fe4625699ef65d3a8882376ba5e27effc0696add298e00af7ba13ad9feb",
+   "steps": [
+    {
+     "lanes": 10,
+     "outcomes": {
+      "submitted": 139,
+      "completed": 139,
+      "failed": 0,
+      "cancelled": 0,
+      "unsettled": 0,
+      "rejected": 0
+     },
+     "success_rate": 1,
+     "completed_per_second": 2.2293632093921745,
+     "measured_seconds": 62.3496429,
+     "all_p50_ms": 4405.9297,
+     "all_p95_ms": 4530.1249,
+     "platform_p50_ms": 237.13740000000038,
+     "platform_p95_ms": 334.32299999999947,
+     "model_p50_ms": 4010.5779,
+     "queue_p50_ms": 126.76999999999998,
+     "queue_p95_ms": 163.00400000000002,
+     "backlog_at_window_end": {
+      "queued": 0,
+      "running": 23
+     },
+     "locks": {
+      "every": "500ms",
+      "samples": 144,
+      "active_mean": 0.5138888888888888,
+      "active_max": 15,
+      "wait_samples": 41,
+      "waits": [
+       {
+        "wait": "IO:WalWrite",
+        "samples": 12,
+        "approx_backend_seconds": 6
+       },
+       {
+        "wait": "Lock:tuple",
+        "object": "tuple:weave_team_runs",
+        "samples": 8,
+        "approx_backend_seconds": 4
+       },
+       {
+        "wait": "Lock:transactionid",
+        "object": "transactionid (row of weave_team_runs)",
+        "samples": 6,
+        "approx_backend_seconds": 3
+       },
+       {
+        "wait": "Client:ClientRead",
+        "samples": 5,
+        "approx_backend_seconds": 2.5
+       },
+       {
+        "wait": "LWLock:WALWrite",
+        "samples": 5,
+        "approx_backend_seconds": 2.5
+       },
+       {
+        "wait": "IO:DataFileExtend",
+        "samples": 2,
+        "approx_backend_seconds": 1
+       },
+       {
+        "wait": "Lock:transactionid",
+        "object": "transactionid (row of weave_fanout_group)",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       },
+       {
+        "wait": "Lock:transactionid",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       },
+       {
+        "wait": "Lock:tuple",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       }
+      ]
+     },
+     "notifications": {
+      "channels": {
+       "weave_task_ready": 480
+      },
+      "notifying_commits": 480,
+      "share_of_commits": 0.019071837253655435,
+      "commit_lock_wait_samples": 0,
+      "commit_lock_wait_seconds": 0
+     },
+     "connection_pool": {
+      "max_conns": 48,
+      "acquires": 26708,
+      "empty_acquires": 19,
+      "empty_acquire_share": 0.0007113973341320953,
+      "canceled_acquires": 0,
+      "acquire_ms": 2768.4966999999997,
+      "acquire_mean_ms": 0.10365795641755278,
+      "empty_acquire_wait_seconds": 2.7366291
+     },
+     "per_completed_workflow": {
+      "statements": 552.26875,
+      "xacts": 171.3,
+      "rollbacks": 14,
+      "top_statements": [
+       {
+        "calls": 12629,
+        "per_workflow": 78.93125,
+        "exec_ms": 6.601500000000182,
+        "query": "begin"
+       },
+       {
+        "calls": 10380,
+        "per_workflow": 64.875,
+        "exec_ms": 5.742100000000002,
+        "query": "commit"
+       },
+       {
+        "calls": 3681,
+        "per_workflow": 23.00625,
+        "exec_ms": 85.60330000000002,
+        "query": "SELECT value FROM loom_store WHERE namespace=$1 AND key=$2"
+       },
+       {
+        "calls": 2249,
+        "per_workflow": 14.05625,
+        "exec_ms": 1.2385999999999524,
+        "query": "rollback"
+       },
+       {
+        "calls": 2076,
+        "per_workflow": 12.975,
+        "exec_ms": 124.3200999999999,
+        "query": "SELECT id, workspace_id, COALESCE(project_id, $4), COALESCE(agent, $5), COALESCE(agent_id, $6), COALESCE(agent_version, $7), identity_kind, identity_schema_version, COALESCE(execution_scope, $8), COAL"
+       },
+       {
+        "calls": 1926,
+        "per_workflow": 12.0375,
+        "exec_ms": 57.335099999999976,
+        "query": "SELECT g.enabled FROM weave_capability_apps a JOIN weave_capability_grants g ON g.workspace_id=a.workspace_id AND g.app_id=a.id WHERE a.workspace_id=$1 AND a.id=$2 AND a.enabled AND g.capability_id=$3"
+       },
+       {
+        "calls": 1921,
+        "per_workflow": 12.00625,
+        "exec_ms": 2777.338700000001,
+        "query": "SELECT workspace_id,project_id,run_id,status, team_run_generation,execution_lease_epoch,resume_generation, team_id,workflow_id,workflow_version,run_snapshot_id, source_kind,source_task_id,establish_id"
+       },
+       {
+        "calls": 1920,
+        "per_workflow": 12,
+        "exec_ms": 456.7944000000008,
+        "query": "SELECT workspace_id, workflow_id, workflow_version, artifact_schema_version, canonicalization_algorithm, canonicalization_version, hash_algorithm, content_hash, payload, created_at FROM weave_publishe"
+       },
+       {
+        "calls": 1601,
+        "per_workflow": 10.00625,
+        "exec_ms": 47.34059999999993,
+        "query": "SELECT workspace_id,run_id,schema_version,attempt_generation,attempt_id,agent,attribution_scope,team_id,workflow_id,workflow_version,run_snapshot_id,conversation_id,parent_run_id,parent_seq,aggregatio"
+       },
+       {
+        "calls": 1600,
+        "per_workflow": 10,
+        "exec_ms": 744.8185000000004,
+        "query": "INSERT INTO weave_team_run_activity_events ( workspace_id,run_id,event_id,kind,node_id,member_id,member_version,detail,occurred_at ) VALUES ($1,$2,$3,$4,NULLIF($5,$10),NULLIF($6,$11),NULLIF($7,$12),$8"
+       }
+      ]
+     }
+    },
+    {
+     "lanes": 20,
+     "outcomes": {
+      "submitted": 278,
+      "completed": 278,
+      "failed": 0,
+      "cancelled": 0,
+      "unsettled": 0,
+      "rejected": 0
+     },
+     "success_rate": 1,
+     "completed_per_second": 4.406036618212146,
+     "measured_seconds": 63.0952541,
+     "all_p50_ms": 4405.9931,
+     "all_p95_ms": 4576.3173,
+     "platform_p50_ms": 217.33329999999992,
+     "platform_p95_ms": 364.7112000000001,
+     "model_p50_ms": 4012.6853,
+     "queue_p50_ms": 134.447,
+     "queue_p95_ms": 175.822,
+     "backlog_at_window_end": {
+      "queued": 0,
+      "running": 62
+     },
+     "locks": {
+      "every": "500ms",
+      "samples": 146,
+      "active_mean": 0.8904109589041096,
+      "active_max": 8,
+      "wait_samples": 78,
+      "waits": [
+       {
+        "wait": "IO:WalWrite",
+        "samples": 23,
+        "approx_backend_seconds": 11.5
+       },
+       {
+        "wait": "Client:ClientRead",
+        "samples": 20,
+        "approx_backend_seconds": 10
+       },
+       {
+        "wait": "LWLock:WALWrite",
+        "samples": 19,
+        "approx_backend_seconds": 9.5
+       },
+       {
+        "wait": "Lock:transactionid",
+        "object": "transactionid (row of weave_fanout_group)",
+        "samples": 4,
+        "approx_backend_seconds": 2
+       },
+       {
+        "wait": "Lock:transactionid",
+        "object": "transactionid (row of weave_team_runs)",
+        "samples": 4,
+        "approx_backend_seconds": 2
+       },
+       {
+        "wait": "Lock:tuple",
+        "object": "tuple:weave_team_runs",
+        "samples": 3,
+        "approx_backend_seconds": 1.5
+       },
+       {
+        "wait": "IO:DataFileExtend",
+        "samples": 2,
+        "approx_backend_seconds": 1
+       },
+       {
+        "wait": "Lock:transactionid",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       },
+       {
+        "wait": "Lock:tuple",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       },
+       {
+        "wait": "Lock:tuple",
+        "object": "transactionid (row of weave_team_runs)",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       }
+      ]
+     },
+     "notifications": {
+      "channels": {
+       "weave_task_ready": 960
+      },
+      "notifying_commits": 960,
+      "share_of_commits": 0.01972872996300863,
+      "commit_lock_wait_samples": 0,
+      "commit_lock_wait_seconds": 0
+     },
+     "connection_pool": {
+      "max_conns": 48,
+      "acquires": 52829,
+      "empty_acquires": 18,
+      "empty_acquire_share": 0.00034072195195820475,
+      "canceled_acquires": 0,
+      "acquire_ms": 5511.9072,
+      "acquire_mean_ms": 0.10433487667758239,
+      "empty_acquire_wait_seconds": 5.396883099999999
+     },
+     "per_completed_workflow": {
+      "statements": 542.5625,
+      "xacts": 165.91875,
+      "rollbacks": 13.85625,
+      "top_statements": [
+       {
+        "calls": 24986,
+        "per_workflow": 78.08125,
+        "exec_ms": 11.552300000000042,
+        "query": "begin"
+       },
+       {
+        "calls": 20489,
+        "per_workflow": 64.028125,
+        "exec_ms": 12.021000000002386,
+        "query": "commit"
+       },
+       {
+        "calls": 7368,
+        "per_workflow": 23.025,
+        "exec_ms": 194.1232999999996,
+        "query": "SELECT value FROM loom_store WHERE namespace=$1 AND key=$2"
+       },
+       {
+        "calls": 4497,
+        "per_workflow": 14.053125,
+        "exec_ms": 2.375900000000108,
+        "query": "rollback"
+       },
+       {
+        "calls": 4151,
+        "per_workflow": 12.971875,
+        "exec_ms": 223.5906000000001,
+        "query": "SELECT id, workspace_id, COALESCE(project_id, $4), COALESCE(agent, $5), COALESCE(agent_id, $6), COALESCE(agent_version, $7), identity_kind, identity_schema_version, COALESCE(execution_scope, $8), COAL"
+       },
+       {
+        "calls": 3849,
+        "per_workflow": 12.028125,
+        "exec_ms": 5629.1077000000505,
+        "query": "SELECT workspace_id,project_id,run_id,status, team_run_generation,execution_lease_epoch,resume_generation, team_id,workflow_id,workflow_version,run_snapshot_id, source_kind,source_task_id,establish_id"
+       },
+       {
+        "calls": 3840,
+        "per_workflow": 12,
+        "exec_ms": 903.4706000000007,
+        "query": "SELECT workspace_id, workflow_id, workflow_version, artifact_schema_version, canonicalization_algorithm, canonicalization_version, hash_algorithm, content_hash, payload, created_at FROM weave_publishe"
+       },
+       {
+        "calls": 3840,
+        "per_workflow": 12,
+        "exec_ms": 114.7193,
+        "query": "SELECT g.enabled FROM weave_capability_apps a JOIN weave_capability_grants g ON g.workspace_id=a.workspace_id AND g.app_id=a.id WHERE a.workspace_id=$1 AND a.id=$2 AND a.enabled AND g.capability_id=$3"
+       },
+       {
+        "calls": 3202,
+        "per_workflow": 10.00625,
+        "exec_ms": 107.82609999999924,
+        "query": "SELECT workspace_id,run_id,schema_version,attempt_generation,attempt_id,agent,attribution_scope,team_id,workflow_id,workflow_version,run_snapshot_id,conversation_id,parent_run_id,parent_seq,aggregatio"
+       },
+       {
+        "calls": 3200,
+        "per_workflow": 10,
+        "exec_ms": 276.28479999999956,
+        "query": "SELECT i.workspace_id,i.application_id,i.request_id,i.invocation_id,i.credential_id, i.capability_id,i.revision,i.definition_hash,i.workflow_id,i.workflow_version,i.input,i.input_hash,COALESCE(i.lane,"
+       }
+      ]
+     }
+    },
+    {
+     "lanes": 50,
+     "outcomes": {
+      "submitted": 660,
+      "completed": 660,
+      "failed": 0,
+      "cancelled": 0,
+      "unsettled": 0,
+      "rejected": 0
+     },
+     "success_rate": 1,
+     "completed_per_second": 10.254760714007354,
+     "measured_seconds": 64.3603511,
+     "all_p50_ms": 4452.529,
+     "all_p95_ms": 5123.1512,
+     "platform_p50_ms": 254.54119999999978,
+     "platform_p95_ms": 791.5621999999995,
+     "model_p50_ms": 4025.3104999999996,
+     "queue_p50_ms": 126.251,
+     "queue_p95_ms": 212.013,
+     "backlog_at_window_end": {
+      "queued": 5,
+      "running": 128
+     },
+     "locks": {
+      "every": "500ms",
+      "samples": 148,
+      "active_mean": 1.695945945945946,
+      "active_max": 13,
+      "wait_samples": 182,
+      "waits": [
+       {
+        "wait": "Client:ClientRead",
+        "samples": 54,
+        "approx_backend_seconds": 27
+       },
+       {
+        "wait": "LWLock:WALWrite",
+        "samples": 53,
+        "approx_backend_seconds": 26.5
+       },
+       {
+        "wait": "IO:WalWrite",
+        "samples": 36,
+        "approx_backend_seconds": 18
+       },
+       {
+        "wait": "Lock:transactionid",
+        "object": "transactionid (row of weave_team_runs)",
+        "samples": 21,
+        "approx_backend_seconds": 10.5
+       },
+       {
+        "wait": "Lock:transactionid",
+        "object": "transactionid (row of weave_fanout_group)",
+        "samples": 8,
+        "approx_backend_seconds": 4
+       },
+       {
+        "wait": "Lock:tuple",
+        "object": "tuple:weave_team_runs",
+        "samples": 5,
+        "approx_backend_seconds": 2.5
+       },
+       {
+        "wait": "Lock:tuple",
+        "object": "tuple:weave_fanout_group",
+        "samples": 2,
+        "approx_backend_seconds": 1
+       },
+       {
+        "wait": "Lock:transactionid",
+        "samples": 2,
+        "approx_backend_seconds": 1
+       },
+       {
+        "wait": "Timeout:SpinDelay",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       }
+      ]
+     },
+     "notifications": {
+      "channels": {
+       "weave_task_ready": 2280
+      },
+      "notifying_commits": 2280,
+      "share_of_commits": 0.020145791915175612,
+      "commit_lock_wait_samples": 0,
+      "commit_lock_wait_seconds": 0
+     },
+     "connection_pool": {
+      "max_conns": 48,
+      "acquires": 123313,
+      "empty_acquires": 3506,
+      "empty_acquire_share": 0.028431714417782392,
+      "canceled_acquires": 0,
+      "acquire_ms": 38903.3405,
+      "acquire_mean_ms": 0.3154845028504699,
+      "empty_acquire_wait_seconds": 38.6899258
+     },
+     "per_completed_workflow": {
+      "statements": 533.875,
+      "xacts": 162.92368421052632,
+      "rollbacks": 14.009210526315789,
+      "top_statements": [
+       {
+        "calls": 58351,
+        "per_workflow": 76.77763157894736,
+        "exec_ms": 26.201999999997792,
+        "query": "begin"
+       },
+       {
+        "calls": 47695,
+        "per_workflow": 62.75657894736842,
+        "exec_ms": 22.88309999998253,
+        "query": "commit"
+       },
+       {
+        "calls": 17485,
+        "per_workflow": 23.00657894736842,
+        "exec_ms": 467.68449999999615,
+        "query": "SELECT value FROM loom_store WHERE namespace=$1 AND key=$2"
+       },
+       {
+        "calls": 10656,
+        "per_workflow": 14.021052631578947,
+        "exec_ms": 5.777200000000956,
+        "query": "rollback"
+       },
+       {
+        "calls": 9822,
+        "per_workflow": 12.923684210526316,
+        "exec_ms": 522.310700000003,
+        "query": "SELECT id, workspace_id, COALESCE(project_id, $4), COALESCE(agent, $5), COALESCE(agent_id, $6), COALESCE(agent_version, $7), identity_kind, identity_schema_version, COALESCE(execution_scope, $8), COAL"
+       },
+       {
+        "calls": 9126,
+        "per_workflow": 12.007894736842106,
+        "exec_ms": 15721.734800000093,
+        "query": "SELECT workspace_id,project_id,run_id,status, team_run_generation,execution_lease_epoch,resume_generation, team_id,workflow_id,workflow_version,run_snapshot_id, source_kind,source_task_id,establish_id"
+       },
+       {
+        "calls": 9121,
+        "per_workflow": 12.001315789473685,
+        "exec_ms": 297.05250000000024,
+        "query": "SELECT g.enabled FROM weave_capability_apps a JOIN weave_capability_grants g ON g.workspace_id=a.workspace_id AND g.app_id=a.id WHERE a.workspace_id=$1 AND a.id=$2 AND a.enabled AND g.capability_id=$3"
+       },
+       {
+        "calls": 9120,
+        "per_workflow": 12,
+        "exec_ms": 2013.7477999999962,
+        "query": "SELECT workspace_id, workflow_id, workflow_version, artifact_schema_version, canonicalization_algorithm, canonicalization_version, hash_algorithm, content_hash, payload, created_at FROM weave_publishe"
+       },
+       {
+        "calls": 7601,
+        "per_workflow": 10.001315789473685,
+        "exec_ms": 245.97980000000103,
+        "query": "SELECT workspace_id,run_id,schema_version,attempt_generation,attempt_id,agent,attribution_scope,team_id,workflow_id,workflow_version,run_snapshot_id,conversation_id,parent_run_id,parent_seq,aggregatio"
+       },
+       {
+        "calls": 7600,
+        "per_workflow": 10,
+        "exec_ms": 636.0227999999988,
+        "query": "SELECT i.workspace_id,i.application_id,i.request_id,i.invocation_id,i.credential_id, i.capability_id,i.revision,i.definition_hash,i.workflow_id,i.workflow_version,i.input,i.input_hash,COALESCE(i.lane,"
+       }
+      ]
+     }
+    },
+    {
+     "lanes": 100,
+     "outcomes": {
+      "submitted": 818,
+      "completed": 818,
+      "failed": 0,
+      "cancelled": 0,
+      "unsettled": 0,
+      "rejected": 0
+     },
+     "success_rate": 1,
+     "completed_per_second": 12.642880156166834,
+     "measured_seconds": 64.7004472,
+     "all_p50_ms": 7282.1069,
+     "all_p95_ms": 9201.1325,
+     "platform_p50_ms": 2357.6274000000008,
+     "platform_p95_ms": 3951.1512000000007,
+     "model_p50_ms": 4136.2702,
+     "queue_p50_ms": 276.08099999999996,
+     "queue_p95_ms": 3386.47,
+     "backlog_at_window_end": {
+      "queued": 0,
+      "running": 205
+     },
+     "locks": {
+      "every": "500ms",
+      "samples": 149,
+      "active_mean": 2.1812080536912752,
+      "active_max": 15,
+      "wait_samples": 245,
+      "waits": [
+       {
+        "wait": "Lock:transactionid",
+        "object": "transactionid (row of weave_team_runs)",
+        "samples": 66,
+        "approx_backend_seconds": 33
+       },
+       {
+        "wait": "Client:ClientRead",
+        "samples": 55,
+        "approx_backend_seconds": 27.5
+       },
+       {
+        "wait": "LWLock:WALWrite",
+        "samples": 42,
+        "approx_backend_seconds": 21
+       },
+       {
+        "wait": "IO:WalWrite",
+        "samples": 27,
+        "approx_backend_seconds": 13.5
+       },
+       {
+        "wait": "Lock:tuple",
+        "object": "tuple:weave_team_runs",
+        "samples": 23,
+        "approx_backend_seconds": 11.5
+       },
+       {
+        "wait": "Lock:transactionid",
+        "object": "transactionid (row of weave_fanout_group)",
+        "samples": 22,
+        "approx_backend_seconds": 11
+       },
+       {
+        "wait": "Lock:advisory",
+        "object": "advisory",
+        "samples": 6,
+        "approx_backend_seconds": 3
+       },
+       {
+        "wait": "IO:AioIoCompletion",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       },
+       {
+        "wait": "Lock:object",
+        "object": "notify commit (pg_database 0)",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       },
+       {
+        "wait": "IO:DataFileExtend",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       },
+       {
+        "wait": "Lock:transactionid",
+        "samples": 1,
+        "approx_backend_seconds": 0.5
+       }
+      ]
+     },
+     "notifications": {
+      "channels": {
+       "weave_task_ready": 2811
+      },
+      "notifying_commits": 2811,
+      "share_of_commits": 0.0204719248415993,
+      "commit_lock_wait_samples": 1,
+      "commit_lock_wait_seconds": 0.5
+     },
+     "connection_pool": {
+      "max_conns": 48,
+      "acquires": 150795,
+      "empty_acquires": 33339,
+      "empty_acquire_share": 0.22108823236844724,
+      "canceled_acquires": 0,
+      "acquire_ms": 748577.0351,
+      "acquire_mean_ms": 4.964203289896879,
+      "empty_acquire_wait_seconds": 747.7467747
+     },
+     "per_completed_workflow": {
+      "statements": 530.8249733191035,
+      "xacts": 160.82604055496265,
+      "rollbacks": 14.283884738527215,
+      "top_statements": [
+       {
+        "calls": 71461,
+        "per_workflow": 76.2657417289221,
+        "exec_ms": 32.76569999999998,
+        "query": "begin"
+       },
+       {
+        "calls": 58048,
+        "per_workflow": 61.950907150480255,
+        "exec_ms": 33.029100000026034,
+        "query": "commit"
+       },
+       {
+        "calls": 21670,
+        "per_workflow": 23.12700106723586,
+        "exec_ms": 669.0655000000303,
+        "query": "SELECT value FROM loom_store WHERE namespace=$1 AND key=$2"
+       },
+       {
+        "calls": 13413,
+        "per_workflow": 14.314834578441836,
+        "exec_ms": 8.759700000001095,
+        "query": "rollback"
+       },
+       {
+        "calls": 12012,
+        "per_workflow": 12.819637139807897,
+        "exec_ms": 756.7249999999999,
+        "query": "SELECT id, workspace_id, COALESCE(project_id, $4), COALESCE(agent, $5), COALESCE(agent_id, $6), COALESCE(agent_version, $7), identity_kind, identity_schema_version, COALESCE(execution_scope, $8), COAL"
+       },
+       {
+        "calls": 11398,
+        "per_workflow": 12.164354322305229,
+        "exec_ms": 35849.69600000036,
+        "query": "SELECT workspace_id,project_id,run_id,status, team_run_generation,execution_lease_epoch,resume_generation, team_id,workflow_id,workflow_version,run_snapshot_id, source_kind,source_task_id,establish_id"
+       },
+       {
+        "calls": 11250,
+        "per_workflow": 12.006403415154749,
+        "exec_ms": 466.7062999999994,
+        "query": "SELECT g.enabled FROM weave_capability_apps a JOIN weave_capability_grants g ON g.workspace_id=a.workspace_id AND g.app_id=a.id WHERE a.workspace_id=$1 AND a.id=$2 AND a.enabled AND g.capability_id=$3"
+       },
+       {
+        "calls": 11244,
+        "per_workflow": 12,
+        "exec_ms": 2648.602799999941,
+        "query": "SELECT workspace_id, workflow_id, workflow_version, artifact_schema_version, canonicalization_algorithm, canonicalization_version, hash_algorithm, content_hash, payload, created_at FROM weave_publishe"
+       },
+       {
+        "calls": 9396,
+        "per_workflow": 10.027748132337246,
+        "exec_ms": 376.0600000000016,
+        "query": "SELECT workspace_id,run_id,schema_version,attempt_generation,attempt_id,agent,attribution_scope,team_id,workflow_id,workflow_version,run_snapshot_id,conversation_id,parent_run_id,parent_seq,aggregatio"
+       },
+       {
+        "calls": 9370,
+        "per_workflow": 10,
+        "exec_ms": 3062.2551999999987,
+        "query": "INSERT INTO weave_team_run_activity_events ( workspace_id,run_id,event_id,kind,node_id,member_id,member_version,detail,occurred_at ) VALUES ($1,$2,$3,$4,NULLIF($5,$10),NULLIF($6,$11),NULLIF($7,$12),$8"
+       }
+      ]
+     }
+    }
+   ]
+  }
+ ]
+}
