@@ -1,6 +1,7 @@
 package businessaction_test
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/execution"
@@ -268,11 +270,37 @@ func TestMaterialReadAllowsOnlyCurrentParkedFanoutLegOnPostgres(t *testing.T) {
 		Checkpoints: &teamrun.FanoutCheckpointReader{Transactions: pool, Runs: runs, Checkpoints: checkpoints}, Tasks: queue,
 		Now: func() time.Time { return now },
 	}
+	listener, err := pgx.ConnectConfig(ctx, pool.Config().ConnConfig.Copy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close(context.Background())
+	if _, err := listener.Exec(ctx, "LISTEN weave_task_ready"); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := coordinator.ActivatePark(ctx, fanout.ActivateParkRequest{
 		WorkspaceID: workspaceID, IntentID: intent.IntentID, ParentRunID: parentRunID,
 		CheckpointSequence: int64(parked.ResumeGeneration), Generation: intent.Generation, ResumeToken: resumeToken,
 	}); err != nil {
 		t.Fatalf("activate actual fanout leg tasks: %v", err)
+	}
+	// Both legs are enqueued in the activation's one transaction, so the
+	// executors are woken once: PostgreSQL delivers a channel and payload
+	// once per transaction, and every notifying commit serializes on one lock.
+	wakes := 0
+	for {
+		waitCtx, cancel := context.WithTimeout(ctx, time.Second)
+		notification, err := listener.WaitForNotification(waitCtx)
+		cancel()
+		if err != nil {
+			break
+		}
+		if notification.Payload == workspaceID {
+			wakes++
+		}
+	}
+	if wakes != 1 {
+		t.Fatalf("activating two fanout legs sent %d task-ready notifications, want 1", wakes)
 	}
 	claimed, err := queue.Claim(ctx, "fanout-worker", taskqueue.ClaimFilter{
 		Kind: "team_workflow", WorkspaceID: workspaceID, RunSnapshotID: snapshotID,
